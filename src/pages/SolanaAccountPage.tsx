@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { fetchJsonRpc } from '../data/rpc';
 import { ChainConfig, useConfigStore } from '../state/configStore';
 import KeyValueTable from '../components/KeyValueTable';
@@ -76,7 +76,17 @@ const SolanaAccountPage = () => {
   const rows = [
     { label: 'Account', value: address, copy: address },
     { label: 'Balance', value: balance !== null ? `${balance} lamports` : '-' },
-    { label: 'Owner', value: accountInfo?.owner ?? '-', copy: accountInfo?.owner ?? undefined },
+    {
+      label: 'Owner',
+      value: accountInfo?.owner ? (
+        <Link to={`/chain/${chain.id}/solana/account/${accountInfo.owner}`}>
+          {accountInfo.owner}
+        </Link>
+      ) : (
+        '-'
+      ),
+      copy: accountInfo?.owner ?? undefined
+    },
     { label: 'Rent Epoch', value: accountInfo?.rentEpoch ?? '-' }
   ];
 

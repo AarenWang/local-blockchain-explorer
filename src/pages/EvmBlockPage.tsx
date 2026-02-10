@@ -74,7 +74,13 @@ const EvmBlockPage = () => {
     { label: 'Block Number', value: parseInt(block.number, 16) },
     { label: 'Hash', value: block.hash, copy: block.hash },
     { label: 'Timestamp', value: formatDateTime(parseInt(block.timestamp, 16)) },
-    { label: 'Miner', value: block.miner, copy: block.miner },
+    {
+      label: 'Miner',
+      value: (
+        <Link to={`/chain/${chain.id}/evm/address/${block.miner}`}>{block.miner}</Link>
+      ),
+      copy: block.miner
+    },
     { label: 'Gas Used', value: formatNumber(parseInt(block.gasUsed, 16)) },
     { label: 'Gas Limit', value: formatNumber(parseInt(block.gasLimit, 16)) }
   ];
