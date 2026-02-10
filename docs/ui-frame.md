@@ -464,16 +464,16 @@
 ## 4.1 Search Bar（所有页顶部）
 
 ```
-[ Search by address / tx / block / slot ]
+[ Search by address / tx / block / slot / height ]
 ```
 
-* 自动识别：
+* 自动识别并路由：
 
-  * `0x` → EVM 地址 / tx
-  * base58 → Solana 地址 / signature
-  * `T...` → TRON 地址 / tx
-  * `bc1...` / base58 → Bitcoin 地址
-  * 纯数字 → block / slot / height
+  * `0x` → /chain/:chainId/evm/address/:address 或 /chain/:chainId/evm/tx/:hash
+  * base58 → /chain/:chainId/solana/account/:address 或 /chain/:chainId/solana/tx/:signature
+  * `T...` → /chain/:chainId/tron/address/:address 或 /chain/:chainId/tron/tx/:txid
+  * `bc1...` / base58 → /chain/:chainId/bitcoin/address/:address
+  * 纯数字 → /chain/:chainId/evm/block/:number | /chain/:chainId/solana/slot/:slot | /chain/:chainId/bitcoin/block/:height
 
 ---
 
