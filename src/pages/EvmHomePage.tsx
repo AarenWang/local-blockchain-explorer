@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchJsonRpc, measureRpc } from '../data/rpc';
 import { formatDateTime, formatNumber, truncateMiddle } from '../data/format';
 import { ChainConfig } from '../state/configStore';
 
@@ -11,12 +10,13 @@ interface EvmHomePageProps {
 interface EvmBlockSummary {
   number: number;
   timestamp: number;
-  transactions: string[];
+  txCount: number;
 }
 
 interface EvmTxSummary {
   hash: string;
   blockNumber: number;
+  gasPrice?: string;
 }
 
 const EvmHomePage = ({ chain }: EvmHomePageProps) => {
@@ -33,65 +33,37 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
 
     const load = async () => {
       try {
-        const { result, latencyMs } = await measureRpc(() =>
-          fetchJsonRpc<string>(chain.rpcUrl, 'eth_blockNumber')
-        );
+        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+        const start = performance.now();
+        const [blocksResponse, txsResponse] = await Promise.all([
+          fetch(`${apiBase}/chain/${chain.id}/evm/blocks?limit=6`),
+          fetch(`${apiBase}/chain/${chain.id}/evm/txs?limit=12`)
+        ]);
+        if (!blocksResponse.ok || !txsResponse.ok) {
+          throw new Error('Indexer API unavailable');
+        }
+        const blocksData = (await blocksResponse.json()) as EvmBlockSummary[];
+        const txsData = (await txsResponse.json()) as EvmTxSummary[];
+        const end = performance.now();
+
         if (!active) {
           return;
         }
-        const latest = parseInt(result, 16);
+
+        const latest = blocksData[0]?.number ?? null;
         setLatestBlock(latest);
-        setFinalizedBlock(Math.max(latest - 2, 0));
-        setLatency(latencyMs);
+        setFinalizedBlock(latest !== null ? Math.max(latest - 2, 0) : null);
+        setLatency(Math.round(end - start));
         setStatus('Connected');
+        setBlocks(blocksData);
+        setRecentTxs(txsData);
 
-        try {
-          const priceHex = await fetchJsonRpc<string>(chain.rpcUrl, 'eth_gasPrice');
-          if (active) {
-            setGasPrice(`${formatNumber(parseInt(priceHex, 16))} wei`);
-          }
-        } catch {
-          if (active) {
-            setGasPrice('-');
-          }
+        const gasValue = txsData.find((item) => item.gasPrice)?.gasPrice;
+        if (gasValue && gasValue.startsWith('0x')) {
+          setGasPrice(`${formatNumber(parseInt(gasValue, 16))} wei`);
+        } else {
+          setGasPrice(gasValue ?? '-');
         }
-
-        const blockNumbers = Array.from({ length: 5 }, (_, index) => latest - index).filter(
-          (num) => num >= 0
-        );
-        const summaries = await Promise.all(
-          blockNumbers.map(async (num) => {
-            try {
-              const block = await fetchJsonRpc<{
-                number: string;
-                timestamp: string;
-                transactions: string[];
-              }>(chain.rpcUrl, 'eth_getBlockByNumber', [`0x${num.toString(16)}`, false]);
-              return {
-                number: parseInt(block.number, 16),
-                timestamp: parseInt(block.timestamp, 16),
-                transactions: block.transactions
-              };
-            } catch {
-              return null;
-            }
-          })
-        );
-        if (!active) {
-          return;
-        }
-        const validSummaries = summaries.filter((item): item is EvmBlockSummary => Boolean(item));
-        setBlocks(validSummaries);
-
-        const txs = validSummaries
-          .flatMap((block) =>
-            block.transactions.slice(0, 4).map((hash) => ({
-              hash,
-              blockNumber: block.number
-            }))
-          )
-          .slice(0, 10);
-        setRecentTxs(txs);
       } catch (error) {
         if (active) {
           setStatus(error instanceof Error ? error.message : 'RPC error');
@@ -157,7 +129,7 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
                 >
                   <div>
                     <div className="list-primary">#{block.number}</div>
-                    <div className="list-secondary">{block.transactions.length} tx</div>
+                    <div className="list-secondary">{block.txCount} tx</div>
                   </div>
                   <div className="list-meta">{formatDateTime(block.timestamp)}</div>
                 </Link>
