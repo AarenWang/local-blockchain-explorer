@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ChainConfig, ChainType, useConfigStore } from '../state/configStore';
 import { fetchJsonRpc, measureRpc } from '../data/rpc';
 
@@ -113,6 +114,9 @@ const ConfigPage = () => {
                 </div>
               </div>
               <div className="chain-actions">
+                <Link to={`/chain/${chain.id}/home`}>
+                  <button type="button">Go</button>
+                </Link>
                 <button type="button" onClick={() => setActiveChain(chain.id)}>
                   {chain.enabled ? 'Active' : 'Activate'}
                 </button>

@@ -93,6 +93,14 @@ a {
   gap: 20px;
 }
 
+.home-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .page-header {
   display: flex;
   align-items: center;
@@ -113,6 +121,34 @@ a {
   gap: 16px;
 }
 
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+}
+
 .headline {
   font-size: 24px;
   margin: 8px 0 0;
@@ -122,6 +158,62 @@ a {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.list-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #1f2937;
+}
+
+.list-row:last-child {
+  border-bottom: none;
+}
+
+.list-primary {
+  font-weight: 600;
+}
+
+.list-secondary {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.list-meta {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.empty-state {
+  color: #9ca3af;
+  padding: 12px 0;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
 }
 
 .list-item {
