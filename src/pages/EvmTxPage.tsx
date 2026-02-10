@@ -98,8 +98,20 @@ const EvmTxPage = () => {
         '-'
       )
     },
-    { label: 'From', value: tx.from, copy: tx.from },
-    { label: 'To', value: tx.to ?? 'Contract Creation', copy: tx.to ?? undefined },
+    {
+      label: 'From',
+      value: <Link to={`/chain/${chain.id}/evm/address/${tx.from}`}>{tx.from}</Link>,
+      copy: tx.from
+    },
+    {
+      label: 'To',
+      value: tx.to ? (
+        <Link to={`/chain/${chain.id}/evm/address/${tx.to}`}>{tx.to}</Link>
+      ) : (
+        'Contract Creation'
+      ),
+      copy: tx.to ?? undefined
+    },
     { label: 'Value', value: `${fromHexToEth(tx.value)} ${chain.nativeTokenSymbol}` },
     { label: 'Gas Limit', value: formatNumber(parseInt(tx.gas, 16)) },
     { label: 'Gas Price', value: formatNumber(parseInt(tx.gasPrice, 16)) },
