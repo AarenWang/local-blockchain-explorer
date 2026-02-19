@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchJsonRpc, measureRpc } from '../data/rpc';
 import { formatDateTime, truncateMiddle } from '../data/format';
 import { ChainConfig } from '../state/configStore';
 
@@ -11,7 +10,7 @@ interface SolanaHomePageProps {
 interface SolanaSlotSummary {
   slot: number;
   blockTime: number | null;
-  signatures: string[];
+  txCount: number;
 }
 
 interface SolanaSignatureSummary {
@@ -33,75 +32,30 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
 
     const load = async () => {
       try {
-        const { result, latencyMs } = await measureRpc(() =>
-          fetchJsonRpc<number>(chain.rpcUrl, 'getSlot')
-        );
+        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+        const start = performance.now();
+        const [slotsResponse, txsResponse] = await Promise.all([
+          fetch(`${apiBase}/chain/${chain.id}/solana/slots?limit=6`),
+          fetch(`${apiBase}/chain/${chain.id}/solana/txs?limit=12`)
+        ]);
+        if (!slotsResponse.ok || !txsResponse.ok) {
+          throw new Error('Indexer API unavailable');
+        }
+        const slotsData = (await slotsResponse.json()) as SolanaSlotSummary[];
+        const txsData = (await txsResponse.json()) as SolanaSignatureSummary[];
+        const end = performance.now();
+
         if (!active) {
           return;
         }
-        setLatestSlot(result);
-        setLatency(latencyMs);
+
+        setLatestSlot(slotsData[0]?.slot ?? null);
+        setLatency(Math.round(end - start));
         setStatus('Connected');
-
-        try {
-          const epochInfo = await fetchJsonRpc<{ epoch: number }>(chain.rpcUrl, 'getEpochInfo');
-          if (active) {
-            setEpoch(epochInfo.epoch);
-          }
-        } catch {
-          if (active) {
-            setEpoch(null);
-          }
-        }
-
-        try {
-          const leaderValue = await fetchJsonRpc<string>(chain.rpcUrl, 'getSlotLeader');
-          if (active) {
-            setLeader(leaderValue);
-          }
-        } catch {
-          if (active) {
-            setLeader('');
-          }
-        }
-
-        const slotNumbers = Array.from({ length: 5 }, (_, index) => result - index).filter(
-          (num) => num >= 0
-        );
-        const summaries = await Promise.all(
-          slotNumbers.map(async (slot) => {
-            try {
-              const block = await fetchJsonRpc<{
-                blockTime: number | null;
-                transactions?: string[];
-              }>(chain.rpcUrl, 'getBlock', [slot, { transactionDetails: 'signatures' }]);
-              return {
-                slot,
-                blockTime: block.blockTime,
-                signatures: Array.isArray(block.transactions) ? block.transactions : []
-              };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        if (!active) {
-          return;
-        }
-
-        const validSummaries = summaries.filter((item): item is SolanaSlotSummary => Boolean(item));
-        setSlots(validSummaries);
-
-        const signatures = validSummaries
-          .flatMap((item) =>
-            item.signatures.slice(0, 4).map((signature) => ({
-              signature,
-              slot: item.slot
-            }))
-          )
-          .slice(0, 10);
-        setRecentSignatures(signatures);
+        setSlots(slotsData);
+        setRecentSignatures(txsData);
+        setEpoch(null);
+        setLeader('');
       } catch (error) {
         if (active) {
           setStatus(error instanceof Error ? error.message : 'RPC error');
@@ -167,7 +121,7 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
                 >
                   <div>
                     <div className="list-primary">#{slot.slot}</div>
-                    <div className="list-secondary">{slot.signatures.length} tx</div>
+                    <div className="list-secondary">{slot.txCount} tx</div>
                   </div>
                   <div className="list-meta">{formatDateTime(slot.blockTime)}</div>
                 </Link>

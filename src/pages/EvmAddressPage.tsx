@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { fetchJsonRpc } from '../data/rpc';
-import { fromHexToEth } from '../data/format';
+import { fromHexToEth, truncateMiddle } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
 import KeyValueTable from '../components/KeyValueTable';
+
+interface AddressTxSummary {
+  hash: string;
+  blockNumber: number;
+  from: string;
+  to: string | null;
+}
 
 const EvmAddressPage = () => {
   const { chainId, address } = useParams();
@@ -14,6 +21,7 @@ const EvmAddressPage = () => {
   );
   const [balance, setBalance] = useState<string>('');
   const [txCount, setTxCount] = useState<number | null>(null);
+  const [recentTxs, setRecentTxs] = useState<AddressTxSummary[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -30,8 +38,17 @@ const EvmAddressPage = () => {
           address,
           'latest'
         ]);
+        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+        const txResponse = await fetch(
+          `${apiBase}/chain/${chain.id}/evm/address/${address}/txs?limit=20`
+        );
+        if (!txResponse.ok) {
+          throw new Error('Indexer API unavailable');
+        }
+        const txs = (await txResponse.json()) as AddressTxSummary[];
         setBalance(balanceHex);
         setTxCount(parseInt(nonceHex, 16));
+        setRecentTxs(txs);
         setError('');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load address');
@@ -89,10 +106,18 @@ const EvmAddressPage = () => {
 
       <section className="card">
         <h2>Recent Transactions</h2>
-        <p className="muted">
-          Recent transactions require an indexer. Use the search bar to load a specific transaction
-          hash.
-        </p>
+        {recentTxs.length === 0 ? (
+          <p className="muted">No recent transactions found.</p>
+        ) : (
+          <div className="list">
+            {recentTxs.map((tx) => (
+              <Link key={tx.hash} className="list-item" to={`/chain/${chain.id}/evm/tx/${tx.hash}`}>
+                <span>{truncateMiddle(tx.hash)}</span>
+                <span>Block #{tx.blockNumber}</span>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
