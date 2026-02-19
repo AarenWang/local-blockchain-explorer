@@ -20,7 +20,7 @@ const defaultChains: ChainConfig[] = [
     id: 'anvil',
     chainType: 'EVM',
     chainName: 'Anvil Local',
-    nativeTokenSymbol: 'ETH',
+    nativeTokenSymbol: 'GO',
     rpcUrl: 'http://localhost:8545',
     chainId: 31337,
     enabled: true
