@@ -8,6 +8,8 @@ import EvmAddressPage from './pages/EvmAddressPage';
 import SolanaSlotPage from './pages/SolanaSlotPage';
 import SolanaTxPage from './pages/SolanaTxPage';
 import SolanaAccountPage from './pages/SolanaAccountPage';
+import WalletManagePage from './pages/WalletManagePage';
+import WalletTabPage from './pages/WalletTabPage';
 import { useConfigStore } from './state/configStore';
 
 const App = () => {
@@ -20,6 +22,8 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Navigate to="/config" replace />} />
           <Route path="/config" element={<ConfigPage />} />
+          <Route path="/wallet-manage" element={<WalletManagePage />} />
+          <Route path="/wallets/:roleId" element={<WalletTabPage />} />
           <Route path="/chain/:chainId/home" element={<ChainHomePage />} />
           <Route path="/chain/:chainId/evm/block/:number" element={<EvmBlockPage />} />
           <Route path="/chain/:chainId/evm/tx/:hash" element={<EvmTxPage />} />

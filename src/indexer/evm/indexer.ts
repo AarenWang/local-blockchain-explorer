@@ -25,7 +25,17 @@ interface EvmBlockRpc {
 interface EvmReceipt {
   status: string;
   gasUsed: string;
+  logs?: Array<{
+    address: string;
+    topics: string[];
+    data: string;
+    logIndex: string;
+  }>;
 }
+
+// ERC20 Transfer event signature: Transfer(address,address,uint256)
+// keccak256("Transfer(address,address,uint256)") = 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+const ERC20_TRANSFER_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 export class EvmIndexer {
   private chain: ChainConfig;
@@ -140,7 +150,50 @@ export class EvmIndexer {
         await this.cache.addRecentEvmTx(tx);
       }
 
+      // Process ERC20 Transfer events
+      await this.processErc20Transfers(blockNumber, block.transactions);
+
       this.lastProcessed = blockNumber;
+    }
+  }
+
+  private async processErc20Transfers(blockNumber: number, transactions: Array<{ hash: string }>) {
+    for (const tx of transactions) {
+      try {
+        const receipt = await fetchJsonRpc<EvmReceipt>(
+          this.chain.rpcUrl,
+          'eth_getTransactionReceipt',
+          [tx.hash]
+        );
+
+        if (!receipt.logs || receipt.logs.length === 0) {
+          continue;
+        }
+
+        for (const log of receipt.logs) {
+          // Check if this is a Transfer event
+          if (log.topics[0]?.toLowerCase() === ERC20_TRANSFER_SIGNATURE && log.topics.length >= 3) {
+            const fromAddress = '0x' + log.topics[1].slice(26).toLowerCase();
+            const toAddress = '0x' + log.topics[2].slice(26).toLowerCase();
+            const value = log.data || '0x';
+
+            this.store.upsertErc20Transfer({
+              id: `transfer_${this.chain.id}_${tx.hash}_${log.logIndex}`,
+              chainId: this.chain.id,
+              tokenAddress: log.address.toLowerCase(),
+              fromAddress,
+              toAddress,
+              value,
+              txHash: tx.hash,
+              blockNumber,
+              logIndex: parseInt(log.logIndex, 16)
+            });
+          }
+        }
+      } catch (error) {
+        // Silently skip errors processing logs for individual transactions
+        logError(`Error processing logs for tx ${tx.hash}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 }

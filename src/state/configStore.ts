@@ -2,6 +2,12 @@ import { useCallback, useMemo, useState } from 'react';
 
 export type ChainType = 'EVM' | 'SOLANA';
 
+export interface Erc20TokenInfo {
+  address: string;
+  symbol?: string;
+  decimals?: number;
+}
+
 export interface ChainConfig {
   id: string;
   chainType: ChainType;
@@ -11,6 +17,7 @@ export interface ChainConfig {
   wsUrl?: string;
   chainId?: number;
   enabled: boolean;
+  erc20Tokens?: Erc20TokenInfo[];
 }
 
 const STORAGE_KEY = 'local-blockchain-explorer-config';

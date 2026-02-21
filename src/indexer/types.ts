@@ -56,3 +56,37 @@ export interface SolanaTxRecord {
   fee: number | null;
   status: number | null;
 }
+
+// Wallet and Mnemonic types
+export interface RoleRecord {
+  id: string;
+  name: string;
+  mnemonicEncrypted: string;
+  derivationPath: string;
+  createdAt: number;
+}
+
+export interface Erc20TokenConfig {
+  id: string;
+  chain_id: string;
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+  created_at: number;
+}
+
+export interface WalletBalance {
+  address: string;
+  index: number;
+  nativeBalance: string;
+  nativeBalanceFormatted: number;
+  erc20Balances: Erc20Balance[];
+}
+
+export interface Erc20Balance {
+  tokenAddress: string;
+  symbol: string;
+  balance: string;
+  balanceFormatted: number;
+}

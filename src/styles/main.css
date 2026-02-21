@@ -375,3 +375,166 @@ select {
 .muted {
   color: #9ca3af;
 }
+
+/* Wallet page styles */
+.top-bar__link {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #e5e7eb;
+  transition: background 0.2s;
+}
+
+.top-bar__link:hover {
+  background: #1f2937;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #1f2937;
+}
+
+.data-table th {
+  background: #0f172a;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.data-table tbody tr:hover {
+  background: #0f172a;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+textarea {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e5e7eb;
+  font-family: inherit;
+  resize: vertical;
+}
+
+code {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  background: #0f172a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ERC20 Token styles */
+.erc20-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #1f2937;
+}
+
+.erc20-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.token-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.token-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  font-size: 13px;
+}
+
+.token-address {
+  color: #9ca3af;
+  margin-left: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.token-decimals {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.add-token-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.add-token-form input {
+  flex: 1;
+}
+
+button.small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.modal-status {
+  min-height: 24px;
+}
+
+/* ERC20 Transfers table styles */
+.list-row--header {
+  font-weight: 600;
+  color: #94a3b8;
+  border-bottom: 1px solid #334155;
+}
+
+.list-row--header .list-secondary {
+  color: #94a3b8;
+}
+
+.status-pill.in {
+  background: #16a34a;
+}
+
+.status-pill.out {
+  background: #b91c1c;
+}
+
+.list-row a {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.5fr 2fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1f2937;
+  transition: background 0.15s;
+}
+
+.list-row:last-child a {
+  border-bottom: none;
+}
+
+.list-row a:hover {
+  background: #1e293b;
+  text-decoration: none;
+}
