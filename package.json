@@ -8,10 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx --max-warnings 0",
-    "indexer:dev": "tsx src/indexer/index.ts"
+    "indexer": "tsx src/indexer/index.ts",
+    "backfill-erc20": "tsx src/indexer/backfill-erc20.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
+    "ethers": "^6.16.0",
     "express": "^4.21.2",
     "ioredis": "^5.4.1",
     "react": "^18.3.1",
@@ -19,11 +21,11 @@
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^4.17.25",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.3",
-    "@types/express": "^4.17.21",
-    "@types/better-sqlite3": "^7.6.10",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"

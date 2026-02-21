@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(npx tsx -e \"\nimport { createApiServer } from ''./src/indexer/api/server.js'';\nimport { SqliteStore } from ''./src/indexer/storage/sqlite.js'';\nimport { RedisCache } from ''./src/indexer/cache/redis.js'';\nimport { ChainConfig } from ''./src/indexer/types.js'';\n\nconst chains = [{\n  id: ''test'',\n  type: ''EVM'',\n  name: ''Test'',\n  rpcUrl: ''http://localhost:8545''\n}];\n\nconst store = new SqliteStore\\(''./data/test.db''\\);\nstore.init\\(\\);\nconst cache = new RedisCache\\(''redis://localhost:6379''\\);\nconst app = createApiServer\\(chains, store, cache\\);\n\n// Test role creation\nconst mockReq = {\n  body: {\n    name: ''Test Role'',\n    mnemonic: ''test test test test test test test test test test test junk'',\n    derivationPath: \"\"m/44''/60''/0''/0\"\"\n  }\n};\n\nconst mockRes = {\n  json: \\(data\\) => console.log\\(''Response:'', JSON.stringify\\(data, null, 2\\)\\),\n  status: \\(code\\) => \\({ json: \\(data\\) => console.log\\(''Error:'', code, data\\) }\\)\n};\n\n// Simulate POST /roles\nconst { name, mnemonic, derivationPath } = mockReq.body;\nconst id = ''role_test'';\nconst now = Math.floor\\(Date.now\\(\\) / 1000\\);\nconst mnemonicEncrypted = Buffer.from\\(mnemonic\\).toString\\(''base64''\\);\n\nstore.createRole\\({ id, name, mnemonicEncrypted, derivationPath, createdAt: now }\\);\nconsole.log\\(''Role created successfully''\\);\nconsole.log\\(''All roles:'', store.getAllRoles\\(\\)\\);\n\")",
+      "Bash(curl:*)",
+      "Bash(npm run lint:*)"
+    ]
+  }
+}
