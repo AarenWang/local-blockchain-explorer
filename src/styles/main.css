@@ -644,3 +644,13 @@ button.small {
   display: flex;
   gap: 8px;
 }
+
+/* Block meta info */
+.block-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
