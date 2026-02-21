@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChainConfig, ChainType, Erc20TokenInfo, useConfigStore } from '../state/configStore';
 import { fetchJsonRpc, measureRpc } from '../data/rpc';
+import { truncateMiddle } from '../data/format';
 
 const emptyDraft = (): ChainConfig => ({
   id: '',
@@ -15,6 +16,15 @@ const emptyDraft = (): ChainConfig => ({
   erc20Tokens: []
 });
 
+interface Tag {
+  id: string;
+  type: 'address' | 'tx';
+  target: string;
+  label: string;
+  note?: string;
+  color: string;
+}
+
 const ConfigPage = () => {
   const { chains, addChain, updateChain, deleteChain, setActiveChain, activeChain } = useConfigStore();
   const [draft, setDraft] = useState<ChainConfig | null>(null);
@@ -23,6 +33,15 @@ const ConfigPage = () => {
   const [saving, setSaving] = useState(false);
   const [newTokenAddress, setNewTokenAddress] = useState('');
   const [loadingToken, setLoadingToken] = useState(false);
+
+  // Tags modal state
+  const [showTagsModal, setShowTagsModal] = useState(false);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [loadingTags, setLoadingTags] = useState(false);
+
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<ChainConfig | null>(null);
+  const [deleteInput, setDeleteInput] = useState('');
 
   const chainStatus = useMemo(() => {
     if (!activeChain) {
@@ -239,6 +258,42 @@ const ConfigPage = () => {
     setDraft({ ...draft, [key]: value });
   };
 
+  // Load all tags
+  const loadTags = async () => {
+    setLoadingTags(true);
+    try {
+      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+      const response = await fetch(`${apiBase}/tags`);
+      if (response.ok) {
+        const data = await response.json();
+        setTags(data);
+      }
+    } catch (err) {
+      console.error('Failed to load tags:', err);
+    } finally {
+      setLoadingTags(false);
+    }
+  };
+
+  const openTagsModal = () => {
+    loadTags();
+    setShowTagsModal(true);
+  };
+
+  // Delete chain with confirmation
+  const initiateDelete = (chain: ChainConfig) => {
+    setDeleteConfirm(chain);
+    setDeleteInput('');
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm && deleteInput === 'DELETE') {
+      deleteChain(deleteConfirm.id);
+      setDeleteConfirm(null);
+      setDeleteInput('');
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -246,9 +301,14 @@ const ConfigPage = () => {
           <h1>Chain Configuration</h1>
           <p>Manage local RPC endpoints and switch active chains.</p>
         </div>
-        <button type="button" className="primary" onClick={startAdd}>
-          + Add Chain
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button type="button" onClick={openTagsModal}>
+            View Tags
+          </button>
+          <button type="button" className="primary" onClick={startAdd}>
+            + Add Chain
+          </button>
+        </div>
       </div>
 
       <section className="card">
@@ -281,7 +341,7 @@ const ConfigPage = () => {
                 <button type="button" onClick={() => startEdit(chain)}>
                   Edit
                 </button>
-                <button type="button" className="danger" onClick={() => deleteChain(chain.id)}>
+                <button type="button" className="danger" onClick={() => initiateDelete(chain)}>
                   Delete
                 </button>
               </div>
@@ -296,6 +356,7 @@ const ConfigPage = () => {
         <p>{latency ? `RPC Latency: ${latency}ms` : 'RPC Latency: -'}</p>
       </section>
 
+      {/* Edit/Add Chain Modal */}
       {draft ? (
         <div className="modal-overlay">
           <div className="modal">
@@ -408,6 +469,100 @@ const ConfigPage = () => {
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Tags List Modal */}
+      {showTagsModal ? (
+        <div className="modal-overlay">
+          <div className="modal" style={{ width: 'min(800px, 92vw)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>All Tags</h3>
+              <button type="button" onClick={() => setShowTagsModal(false)}>✕</button>
+            </div>
+
+            {loadingTags ? (
+              <p className="muted">Loading tags...</p>
+            ) : tags.length === 0 ? (
+              <p className="muted">No tags found.</p>
+            ) : (
+              <div className="tags-list">
+                {tags.map((tag) => (
+                  <div key={tag.id} className="tag-list-item">
+                    <span
+                      className="tag-badge"
+                      style={{ backgroundColor: tag.color + '20', color: tag.color, border: `1px solid ${tag.color}40` }}
+                    >
+                      {tag.label}
+                    </span>
+                    <span className="tag-type">{tag.type}</span>
+                    <span className="tag-target mono">{truncateMiddle(tag.target)}</span>
+                    {tag.note && <span className="tag-note">{tag.note}</span>}
+                    <a
+                      href={tag.type === 'address'
+                        ? `/chain/anvil/evm/address/${tag.target}`
+                        : `/chain/anvil/evm/tx/${tag.target}`}
+                      onClick={() => setShowTagsModal(false)}
+                      className="tag-link"
+                    >
+                      View
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <div className="modal-actions__right">
+                <button type="button" onClick={() => setShowTagsModal(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm ? (
+        <div className="modal-overlay">
+          <div className="modal" style={{ width: '400px' }}>
+            <h3>Confirm Delete</h3>
+            <p>
+              Are you sure you want to delete <strong>{deleteConfirm.chainName}</strong>?
+            </p>
+            <p className="muted">This action cannot be undone.</p>
+
+            <label>
+              Type <code>DELETE</code> to confirm:
+              <input
+                type="text"
+                value={deleteInput}
+                onChange={(e) => setDeleteInput(e.target.value)}
+                placeholder="DELETE"
+              />
+            </label>
+
+            <div className="modal-actions__right" style={{ justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirm(null);
+                  setDeleteInput('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={confirmDelete}
+                disabled={deleteInput !== 'DELETE'}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
