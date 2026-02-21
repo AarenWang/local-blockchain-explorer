@@ -155,7 +155,7 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
                 >
                   <div>
                     <div className="list-primary mono">{truncateMiddle(tx.hash)}</div>
-                    <div className="list-secondary">Block #{tx.blockNumber}</div>
+                    <div className="list-secondary">Block {tx.blockNumber}</div>
                   </div>
                   <div className="list-meta">View</div>
                 </Link>

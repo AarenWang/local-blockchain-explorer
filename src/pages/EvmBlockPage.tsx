@@ -89,8 +89,13 @@ const EvmBlockPage = () => {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1>Block #{parseInt(block.number, 16)}</h1>
+          <h1>Block {parseInt(block.number, 16)}</h1>
           <p>{chain.chainName}</p>
+          <div className="block-meta">
+            <span>高度: {parseInt(block.number, 16)}</span>
+            <span>·</span>
+            <span>{formatDateTime(parseInt(block.timestamp, 16))}</span>
+          </div>
         </div>
       </div>
 
