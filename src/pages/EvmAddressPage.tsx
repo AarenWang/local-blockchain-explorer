@@ -4,6 +4,7 @@ import { fetchJsonRpc } from '../data/rpc';
 import { fromHexToEth, truncateMiddle } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
 import KeyValueTable from '../components/KeyValueTable';
+import TagManager from '../components/TagManager';
 
 interface AddressTxSummary {
   hash: string;
@@ -215,6 +216,7 @@ const EvmAddressPage = () => {
           <h1>Address</h1>
           <p>{chain.chainName}</p>
         </div>
+        <TagManager type="address" target={address} />
       </div>
 
       <section className="card">

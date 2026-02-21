@@ -130,6 +130,22 @@ export class SqliteStore {
         on erc20_transfers(chain_id, to_address);
       create index if not exists idx_erc20_transfers_block
         on erc20_transfers(chain_id, block_number desc);
+
+      -- Tags for addresses and transactions
+      create table if not exists tags (
+        id text primary key,
+        type text not null check(type in ('address', 'tx')),
+        target text not null,
+        label text not null,
+        note text,
+        color text default '#3b82f6',
+        created_at integer default (strftime('%s','now')),
+        updated_at integer default (strftime('%s','now')),
+        unique(type, target)
+      );
+
+      create index if not exists idx_tags_type_target
+        on tags(type, target);
     `);
   }
 
@@ -304,6 +320,55 @@ export class SqliteStore {
       limit ?
     `);
     return stmt.all(chainId, limit);
+  }
+
+  // Tag management methods
+  upsertTag(tag: {
+    id: string;
+    type: 'address' | 'tx';
+    target: string;
+    label: string;
+    note?: string;
+    color?: string;
+  }) {
+    const stmt = this.db.prepare(`
+      insert into tags (id, type, target, label, note, color, updated_at)
+      values (@id, @type, @target, @label, @note, @color, strftime('%s','now'))
+      on conflict(type, target) do update set
+        label=excluded.label,
+        note=excluded.note,
+        color=excluded.color,
+        updated_at=excluded.updated_at
+    `);
+    return stmt.run(tag);
+  }
+
+  getTag(type: 'address' | 'tx', target: string) {
+    const stmt = this.db.prepare(`
+      select * from tags where type = ? and lower(target) = lower(?)
+    `);
+    return stmt.get(type, target);
+  }
+
+  getTagByTarget(target: string) {
+    const stmt = this.db.prepare(`
+      select * from tags where lower(target) = lower(?)
+    `);
+    return stmt.get(target);
+  }
+
+  getAllTags() {
+    const stmt = this.db.prepare(`
+      select * from tags order by created_at desc
+    `);
+    return stmt.all();
+  }
+
+  deleteTag(type: 'address' | 'tx', target: string) {
+    const stmt = this.db.prepare(`
+      delete from tags where type = ? and lower(target) = lower(?)
+    `);
+    return stmt.run(type, target);
   }
 
   upsertEvmBlock(block: EvmBlockRecord, txs: EvmTxRecord[]) {

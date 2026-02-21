@@ -4,6 +4,7 @@ import { fetchJsonRpc } from '../data/rpc';
 import { formatNumber, fromHexToEth } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
 import KeyValueTable from '../components/KeyValueTable';
+import TagManager from '../components/TagManager';
 
 interface EvmTransaction {
   hash: string;
@@ -126,6 +127,7 @@ const EvmTxPage = () => {
           <h1>Transaction</h1>
           <p>{chain.chainName}</p>
         </div>
+        <TagManager type="tx" target={hash} />
       </div>
 
       <section className="card">

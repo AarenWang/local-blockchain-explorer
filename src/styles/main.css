@@ -538,3 +538,109 @@ button.small {
   background: #1e293b;
   text-decoration: none;
 }
+
+/* Tag Manager styles */
+.tag-manager {
+  display: flex;
+  align-items: center;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.tag-badge:hover {
+  opacity: 0.8;
+}
+
+.tag-add-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+  background: #374151;
+  color: #9ca3af;
+  border: 1px dashed #4b5563;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tag-add-btn:hover {
+  background: #4b5563;
+  color: #e5e7eb;
+  border-color: #6b7280;
+}
+
+.tag-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.tag-modal-content {
+  width: min(400px, 90vw);
+  background: #111827;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tag-modal-content h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.tag-modal-content label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.color-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.color-option.selected {
+  border-color: #e5e7eb;
+  box-shadow: 0 0 0 2px #111827;
+}
+
+.color-option:hover {
+  transform: scale(1.1);
+}
+
+.tag-modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tag-modal-actions-right {
+  display: flex;
+  gap: 8px;
+}
