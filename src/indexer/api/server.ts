@@ -401,5 +401,83 @@ export const createApiServer = (
     }
   });
 
+  // ===== Tag Management Endpoints =====
+
+  // Get all tags
+  app.get('/tags', (req, res) => {
+    try {
+      const tags = store.getAllTags();
+      res.json(tags);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Get tag by type and target
+  app.get('/tags/:type/:target', (req, res) => {
+    try {
+      const { type, target } = req.params;
+      if (type !== 'address' && type !== 'tx') {
+        res.status(400).json({ error: 'Type must be "address" or "tx"' });
+        return;
+      }
+      const tag = store.getTag(type as 'address' | 'tx', target);
+      if (!tag) {
+        res.status(404).json({ error: 'Tag not found' });
+        return;
+      }
+      res.json(tag);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Create or update tag
+  app.put('/tags', (req, res) => {
+    try {
+      const { type, target, label, note, color } = req.body;
+
+      if (!type || !target || !label) {
+        res.status(400).json({ error: 'Type, target, and label are required' });
+        return;
+      }
+
+      if (type !== 'address' && type !== 'tx') {
+        res.status(400).json({ error: 'Type must be "address" or "tx"' });
+        return;
+      }
+
+      const id = `tag_${type}_${target.toLowerCase()}`;
+      const tag = {
+        id,
+        type,
+        target: target.toLowerCase(),
+        label,
+        note: note || '',
+        color: color || '#3b82f6'
+      };
+
+      store.upsertTag(tag);
+      res.json(tag);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Delete tag
+  app.delete('/tags/:type/:target', (req, res) => {
+    try {
+      const { type, target } = req.params;
+      if (type !== 'address' && type !== 'tx') {
+        res.status(400).json({ error: 'Type must be "address" or "tx"' });
+        return;
+      }
+      store.deleteTag(type as 'address' | 'tx', target);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   return app;
 };
