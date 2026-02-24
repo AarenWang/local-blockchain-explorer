@@ -8,9 +8,12 @@ import KeyValueTable from '../components/KeyValueTable';
 interface SolanaBlock {
   blockTime: number | null;
   blockHeight?: number | null;
-  previousBlockhash?: string;
+  parentSlot?: number;
   blockhash?: string;
-  transactions: Array<{ transaction: { signatures: string[] } }>;
+  parentBlockhash?: string;
+  previousBlockhash?: string;
+  signatures?: string[];
+  transactions?: Array<{ transaction: { signatures: string[] } }>;
 }
 
 const SolanaSlotPage = () => {
@@ -21,22 +24,48 @@ const SolanaSlotPage = () => {
     [chains, chainId]
   );
   const [block, setBlock] = useState<SolanaBlock | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const load = async () => {
       if (!chain || !slot) {
+        setLoading(false);
         return;
       }
+
+      setLoading(true);
+      setError('');
+
       try {
-        const result = await fetchJsonRpc<SolanaBlock>(chain.rpcUrl, 'getBlock', [
-          Number(slot),
-          { transactionDetails: 'signatures' }
-        ]);
-        setBlock(result);
-        setError('');
+        // Try to get block by slot
+        const result = await fetch(chain.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBlock',
+            params: [Number(slot), { encoding: 'json', transactionDetails: 'signatures' }]
+          })
+        });
+
+        const data = await result.json();
+
+        if (data.error) {
+          throw new Error(data.error.message || 'Failed to load slot');
+        }
+
+        if (!data.result) {
+          setError('Slot not found');
+        } else {
+          setBlock(data.result);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load slot');
+        const errorMsg = err instanceof Error ? err.message : 'Failed to load slot';
+        setError(errorMsg);
+      } finally {
+        setLoading(false);
       }
     };
     load();
@@ -46,6 +75,14 @@ const SolanaSlotPage = () => {
     return (
       <div className="page">
         <h1>Chain not found</h1>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page">
+        <p>Loading slot...</p>
       </div>
     );
   }
@@ -62,21 +99,31 @@ const SolanaSlotPage = () => {
   if (!block) {
     return (
       <div className="page">
-        <p>Loading slot...</p>
+        <h1>Slot not found</h1>
       </div>
     );
   }
 
+  // When using transactionDetails: 'signatures', Solana returns a flat signatures array
+  const signatures = block.signatures || [];
   const rows = [
     { label: 'Slot', value: slot ?? '-' },
-    { label: 'Block Time', value: formatDateTime(block.blockTime ?? null) },
+    { label: 'Block Time', value: block.blockTime ? formatDateTime(block.blockTime) : '-' },
     { label: 'Blockhash', value: block.blockhash ?? '-', copy: block.blockhash ?? undefined },
     {
-      label: 'Previous Blockhash',
-      value: block.previousBlockhash ?? '-',
-      copy: block.previousBlockhash ?? undefined
+      label: 'Parent Blockhash',
+      value: block.previousBlockhash ?? block.parentBlockhash ?? '-',
+      copy: block.previousBlockhash ?? block.parentBlockhash ?? undefined
     }
   ];
+
+  if (block.blockHeight !== undefined && block.blockHeight !== null) {
+    rows.push({ label: 'Block Height', value: block.blockHeight });
+  }
+
+  if (block.parentSlot !== undefined) {
+    rows.push({ label: 'Parent Slot', value: block.parentSlot });
+  }
 
   return (
     <div className="page">
@@ -92,18 +139,19 @@ const SolanaSlotPage = () => {
       </section>
 
       <section className="card">
-        <h2>Transactions ({block.transactions.length})</h2>
-        <div className="list">
-          {block.transactions.map((item) => {
-            const signature = item.transaction.signatures[0];
-            return (
+        <h2>Transactions ({signatures.length})</h2>
+        {signatures.length === 0 ? (
+          <p className="muted">No transactions in this slot.</p>
+        ) : (
+          <div className="list">
+            {signatures.map((signature) => (
               <Link key={signature} className="list-item" to={`/chain/${chain.id}/solana/tx/${signature}`}>
                 <span>{truncateMiddle(signature)}</span>
                 <span>View Transaction</span>
               </Link>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

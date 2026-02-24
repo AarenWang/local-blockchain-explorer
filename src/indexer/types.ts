@@ -5,6 +5,8 @@ export interface ChainConfig {
   type: ChainType;
   name: string;
   rpcUrl: string;
+  // Whether to index this chain (default: true)
+  indexing?: boolean;
 }
 
 export interface IndexerConfig {

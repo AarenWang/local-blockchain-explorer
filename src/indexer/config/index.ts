@@ -17,13 +17,15 @@ const parseChains = (): ChainConfig[] => {
       id: 'anvil',
       type: 'EVM',
       name: 'Anvil Local',
-      rpcUrl: 'http://localhost:8545'
+      rpcUrl: 'http://localhost:8545',
+      indexing: true // Enable EVM indexing
     },
     {
       id: 'solana-local',
       type: 'SOLANA',
       name: 'Solana Local',
-      rpcUrl: 'http://localhost:8899'
+      rpcUrl: 'http://localhost:8899',
+      indexing: true // Enable Solana indexing
     }
   ];
 };
