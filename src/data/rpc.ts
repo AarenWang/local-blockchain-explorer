@@ -25,10 +25,11 @@ export const fetchJsonRpc = async <T>(url: string, method: string, params: unkno
   if (data.error) {
     throw new Error(data.error.message);
   }
-  if (data.result === undefined) {
+  // Allow null as a valid result (e.g., Solana getTransaction can return null)
+  if ('result' in data && data.result === undefined) {
     throw new Error('RPC response missing result');
   }
-  return data.result;
+  return data.result as T;
 };
 
 export const measureRpc = async <T>(request: () => Promise<T>) => {

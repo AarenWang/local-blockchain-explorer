@@ -8,6 +8,12 @@ export interface Erc20TokenInfo {
   decimals?: number;
 }
 
+export interface SplTokenInfo {
+  mint: string;
+  symbol?: string;
+  decimals?: number;
+}
+
 export interface ChainConfig {
   id: string;
   chainType: ChainType;
@@ -17,7 +23,9 @@ export interface ChainConfig {
   wsUrl?: string;
   chainId?: number;
   enabled: boolean;
+  // EVM chains use erc20Tokens, Solana chains use splTokens
   erc20Tokens?: Erc20TokenInfo[];
+  splTokens?: SplTokenInfo[];
 }
 
 const STORAGE_KEY = 'local-blockchain-explorer-config';

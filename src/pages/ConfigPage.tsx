@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChainConfig, ChainType, Erc20TokenInfo, useConfigStore } from '../state/configStore';
+import { ChainConfig, ChainType, Erc20TokenInfo, SplTokenInfo, useConfigStore } from '../state/configStore';
 import { fetchJsonRpc, measureRpc } from '../data/rpc';
 import { truncateMiddle } from '../data/format';
 
@@ -13,7 +13,8 @@ const emptyDraft = (): ChainConfig => ({
   wsUrl: '',
   chainId: undefined,
   enabled: false,
-  erc20Tokens: []
+  erc20Tokens: [],
+  splTokens: []
 });
 
 interface Tag {
@@ -58,7 +59,11 @@ const ConfigPage = () => {
   };
 
   const startEdit = (chain: ChainConfig) => {
-    setDraft({ ...chain, erc20Tokens: chain.erc20Tokens || [] });
+    setDraft({
+      ...chain,
+      erc20Tokens: chain.erc20Tokens || [],
+      splTokens: chain.splTokens || []
+    });
     setStatus('');
     setLatency(null);
     setNewTokenAddress('');
@@ -103,12 +108,12 @@ const ConfigPage = () => {
     }
   };
 
-  const onFetchTokenInfo = async () => {
+  // Add ERC20 Token (EVM)
+  const onFetchErc20TokenInfo = async () => {
     if (!draft || !newTokenAddress || !draft.rpcUrl) {
       return;
     }
 
-    // Check if token already exists
     if (draft.erc20Tokens?.some(t => t.address.toLowerCase() === newTokenAddress.toLowerCase())) {
       setStatus('Token already added');
       return;
@@ -118,8 +123,7 @@ const ConfigPage = () => {
     setStatus('Fetching token info...');
 
     try {
-      // Always use direct RPC call to fetch token info
-      const tokenInfo = await fetchTokenInfoFromRpc(newTokenAddress, draft.rpcUrl);
+      const tokenInfo = await fetchErc20TokenInfoFromRpc(newTokenAddress, draft.rpcUrl);
 
       setDraft({
         ...draft,
@@ -141,49 +145,60 @@ const ConfigPage = () => {
     }
   };
 
-  const fetchTokenInfoFromRpc = async (tokenAddress: string, rpcUrl: string) => {
-    // ERC20 ABI for symbol and decimals
-    const abi = [
-      {
-        constant: true,
-        inputs: [],
-        name: 'decimals',
-        outputs: [{ name: '', type: 'uint8' }],
-        type: 'function'
-      },
-      {
-        constant: true,
-        inputs: [],
-        name: 'symbol',
-        outputs: [{ name: '', type: 'string' }],
-        type: 'function'
-      }
-    ];
+  // Add SPL Token (Solana)
+  const onFetchSplTokenInfo = async () => {
+    if (!draft || !newTokenAddress || !draft.rpcUrl) {
+      return;
+    }
 
-    // Call symbol()
+    if (draft.splTokens?.some(t => t.mint.toLowerCase() === newTokenAddress.toLowerCase())) {
+      setStatus('Token already added');
+      return;
+    }
+
+    setLoadingToken(true);
+    setStatus('Fetching token info...');
+
+    try {
+      const tokenInfo = await fetchSplTokenInfoFromRpc(newTokenAddress, draft.rpcUrl);
+
+      setDraft({
+        ...draft,
+        splTokens: [
+          ...(draft.splTokens || []),
+          {
+            mint: tokenInfo.mint,
+            symbol: tokenInfo.symbol,
+            decimals: tokenInfo.decimals
+          }
+        ]
+      });
+      setNewTokenAddress('');
+      setStatus(`Added ${tokenInfo.symbol} token`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to fetch token info');
+    } finally {
+      setLoadingToken(false);
+    }
+  };
+
+  const fetchErc20TokenInfoFromRpc = async (tokenAddress: string, rpcUrl: string) => {
     const symbolCall = {
       jsonrpc: '2.0',
       id: 1,
       method: 'eth_call',
       params: [
-        {
-          to: tokenAddress,
-          data: '0x95d89b41' // symbol() selector
-        },
+        { to: tokenAddress, data: '0x95d89b41' }, // symbol() selector
         'latest'
       ]
     };
 
-    // Call decimals()
     const decimalsCall = {
       jsonrpc: '2.0',
       id: 2,
       method: 'eth_call',
       params: [
-        {
-          to: tokenAddress,
-          data: '0x313ce567' // decimals() selector
-        },
+        { to: tokenAddress, data: '0x313ce567' }, // decimals() selector
         'latest'
       ]
     };
@@ -207,11 +222,9 @@ const ConfigPage = () => {
     if (symbolData.error) throw new Error('Failed to fetch symbol');
     if (decimalsData.error) throw new Error('Failed to fetch decimals');
 
-    // Decode symbol (string)
     const symbolHex = symbolData.result;
     const symbol = symbolHex === '0x' ? '' : decodeHexString(symbolHex);
 
-    // Decode decimals (uint8)
     const decimalsHex = decimalsData.result;
     const decimals = parseInt(decimalsHex, 16);
 
@@ -222,20 +235,67 @@ const ConfigPage = () => {
     };
   };
 
-  const decodeHexString = (hex: string): string => {
-    // Remove 0x prefix
-    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const fetchSplTokenInfoFromRpc = async (mintAddress: string, rpcUrl: string) => {
+    // First, try to get token info from Jupiter token list
+    let symbol = mintAddress.slice(0, 8); // Default fallback
+    let decimals = 0;
 
-    // First 64 chars (32 bytes) is the offset, next 64 chars is the length
+    try {
+      // Try Jupiter token list API
+      const tokenListResponse = await fetch('https://token.jup.ag/all');
+      if (tokenListResponse.ok) {
+        const tokenList = await tokenListResponse.json();
+        const tokenInfo = tokenList.find((t: any) =>
+          t.address.toLowerCase() === mintAddress.toLowerCase() ||
+          t.address === mintAddress
+        );
+        if (tokenInfo) {
+          symbol = tokenInfo.symbol;
+          decimals = tokenInfo.decimals;
+        }
+      }
+    } catch (err) {
+      console.log('Failed to fetch from token list, using RPC');
+    }
+
+    // If not found in token list, fetch from RPC to get decimals
+    if (decimals === 0) {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getAccountInfo',
+          params: [
+            mintAddress,
+            { encoding: 'jsonParsed' }
+          ]
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.result?.value?.data) {
+        const parsedData = data.result.value.data;
+        decimals = parsedData?.parsed?.info?.decimals || 0;
+      }
+    }
+
+    return {
+      mint: mintAddress,
+      symbol,
+      decimals
+    };
+  };
+
+  const decodeHexString = (hex: string): string => {
+    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
     const lengthHex = cleanHex.slice(64, 128);
     const length = parseInt(lengthHex, 16);
-
-    // The actual string data starts at the offset
-    const dataStart = 64 + 64; // Skip offset and length
+    const dataStart = 64 + 64;
     const dataEnd = dataStart + (length * 2);
     const stringHex = cleanHex.slice(dataStart, dataEnd);
-
-    // Convert hex to string
     let result = '';
     for (let i = 0; i < stringHex.length; i += 2) {
       result += String.fromCharCode(parseInt(stringHex.substr(i, 2), 16));
@@ -243,11 +303,19 @@ const ConfigPage = () => {
     return result;
   };
 
-  const removeToken = (index: number) => {
+  const removeErc20Token = (index: number) => {
     if (!draft) return;
     setDraft({
       ...draft,
       erc20Tokens: draft.erc20Tokens?.filter((_, i) => i !== index) || []
+    });
+  };
+
+  const removeSplToken = (index: number) => {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      splTokens: draft.splTokens?.filter((_, i) => i !== index) || []
     });
   };
 
@@ -328,6 +396,11 @@ const ConfigPage = () => {
                 {chain.erc20Tokens && chain.erc20Tokens.length > 0 ? (
                   <div className="chain-meta">
                     ERC20 Tokens: {chain.erc20Tokens.map(t => t.symbol || t.address.slice(0, 8)).join(', ')}
+                  </div>
+                ) : null}
+                {chain.splTokens && chain.splTokens.length > 0 ? (
+                  <div className="chain-meta">
+                    SPL Tokens: {chain.splTokens.map(t => t.symbol || t.mint.slice(0, 8)).join(', ')}
                   </div>
                 ) : null}
               </div>
@@ -414,6 +487,7 @@ const ConfigPage = () => {
               ) : null}
             </div>
 
+            {/* ERC20 Tokens for EVM */}
             {draft.chainType === 'EVM' ? (
               <div className="erc20-section">
                 <h4>ERC20 Tokens</h4>
@@ -428,7 +502,7 @@ const ConfigPage = () => {
                       <button
                         type="button"
                         className="danger small"
-                        onClick={() => removeToken(index)}
+                        onClick={() => removeErc20Token(index)}
                       >
                         Remove
                       </button>
@@ -444,7 +518,47 @@ const ConfigPage = () => {
                   />
                   <button
                     type="button"
-                    onClick={onFetchTokenInfo}
+                    onClick={onFetchErc20TokenInfo}
+                    disabled={loadingToken || !newTokenAddress}
+                  >
+                    {loadingToken ? 'Fetching...' : 'Add Token'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* SPL Tokens for Solana */}
+            {draft.chainType === 'SOLANA' ? (
+              <div className="erc20-section">
+                <h4>SPL Tokens</h4>
+                <div className="token-list">
+                  {draft.splTokens?.map((token, index) => (
+                    <div key={index} className="token-item">
+                      <span>
+                        <strong>{token.symbol || 'Unknown'}</strong>
+                        <span className="token-address">{token.mint}</span>
+                        {token.decimals !== undefined && <span className="token-decimals">({token.decimals} decimals)</span>}
+                      </span>
+                      <button
+                        type="button"
+                        className="danger small"
+                        onClick={() => removeSplToken(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )) || <p className="muted">No SPL tokens configured.</p>}
+                </div>
+                <div className="add-token-form">
+                  <input
+                    type="text"
+                    placeholder="Token mint address"
+                    value={newTokenAddress}
+                    onChange={(e) => setNewTokenAddress(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={onFetchSplTokenInfo}
                     disabled={loadingToken || !newTokenAddress}
                   >
                     {loadingToken ? 'Fetching...' : 'Add Token'}

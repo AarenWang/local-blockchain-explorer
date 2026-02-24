@@ -371,6 +371,21 @@ export class SqliteStore {
     return stmt.run(type, target);
   }
 
+  // Clear all data for a specific chain (useful for test chains that restart)
+  clearChainData(chainId: string) {
+    const tx = this.db.transaction(() => {
+      // Clear EVM data
+      this.db.prepare('delete from evm_blocks where chain_id = ?').run(chainId);
+      this.db.prepare('delete from evm_txs where chain_id = ?').run(chainId);
+      this.db.prepare('delete from erc20_transfers where chain_id = ?').run(chainId);
+
+      // Clear Solana data
+      this.db.prepare('delete from solana_slots where chain_id = ?').run(chainId);
+      this.db.prepare('delete from solana_txs where chain_id = ?').run(chainId);
+    });
+    tx();
+  }
+
   upsertEvmBlock(block: EvmBlockRecord, txs: EvmTxRecord[]) {
     const insertBlock = this.db.prepare(`
       insert into evm_blocks

@@ -266,7 +266,7 @@ const EvmAddressPage = () => {
               <span>Type</span>
               <span>Amount</span>
               <span>Tx Hash</span>
-              <span>高度</span>
+              <span>Height</span>
             </div>
             {erc20Transfers.map((transfer) => {
               const isIncoming = transfer.to_address.toLowerCase() === address.toLowerCase();
@@ -309,7 +309,7 @@ const EvmAddressPage = () => {
             {recentTxs.map((tx) => (
               <Link key={tx.hash} className="list-item" to={`/chain/${chain.id}/evm/tx/${tx.hash}`}>
                 <span>{truncateMiddle(tx.hash)}</span>
-                <span>高度: {tx.blockNumber}</span>
+                <span>Height: {tx.blockNumber}</span>
               </Link>
             ))}
           </div>

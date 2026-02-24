@@ -4,6 +4,7 @@ import { SqliteStore } from '../storage/sqlite';
 import { ChainConfig, RoleRecord, Erc20TokenConfig } from '../types';
 import { WalletService } from '../wallet/walletService';
 import { Mnemonic } from 'ethers';
+import { logInfo, logError } from '../utils/logger';
 
 export const createApiServer = (
   chains: ChainConfig[],
@@ -13,6 +14,13 @@ export const createApiServer = (
   const app = express();
 
   app.use(express.json());
+
+  // Request logging middleware
+  app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    logInfo(`[${timestamp}] ${req.method} ${req.url}`);
+    next();
+  });
 
   app.use((_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
