@@ -706,3 +706,10 @@ button.small {
 .tag-link:hover {
   text-decoration: underline;
 }
+
+/* Address with tag display */
+.address-with-tag {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}

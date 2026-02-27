@@ -421,7 +421,7 @@ export const createApiServer = (
     }
   });
 
-  // Get tag by type and target
+  // Get tag by type and target - returns null if not found (not 404)
   app.get('/tags/:type/:target', (req, res) => {
     try {
       const { type, target } = req.params;
@@ -430,11 +430,7 @@ export const createApiServer = (
         return;
       }
       const tag = store.getTag(type as 'address' | 'tx', target);
-      if (!tag) {
-        res.status(404).json({ error: 'Tag not found' });
-        return;
-      }
-      res.json(tag);
+      res.json(tag ?? null);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
