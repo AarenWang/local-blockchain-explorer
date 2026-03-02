@@ -460,42 +460,42 @@ export class SqliteStore {
     tx();
   }
 
-  getRecentEvmBlocks(chainId: string, limit: number) {
+  getRecentEvmBlocks(chainId: string, limit: number, offset: number = 0) {
     const stmt = this.db.prepare(
-      'select * from evm_blocks where chain_id = ? order by number desc limit ?'
+      'select * from evm_blocks where chain_id = ? order by number desc limit ? offset ?'
     );
-    return stmt.all(chainId, limit) as EvmBlockRecord[];
+    return stmt.all(chainId, limit, offset) as EvmBlockRecord[];
   }
 
-  getRecentEvmTxs(chainId: string, limit: number) {
+  getRecentEvmTxs(chainId: string, limit: number, offset: number = 0) {
     const stmt = this.db.prepare(
-      'select * from evm_txs where chain_id = ? order by block_number desc limit ?'
+      'select * from evm_txs where chain_id = ? order by block_number desc limit ? offset ?'
     );
-    return stmt.all(chainId, limit) as EvmTxRecord[];
+    return stmt.all(chainId, limit, offset) as EvmTxRecord[];
   }
 
-  getEvmAddressTxs(chainId: string, address: string, limit: number) {
+  getEvmAddressTxs(chainId: string, address: string, limit: number, offset: number = 0) {
     const stmt = this.db.prepare(
       `select * from evm_txs
        where chain_id = ? and (from_addr = ? or to_addr = ?)
        order by block_number desc
-       limit ?`
+       limit ? offset ?`
     );
     const addressLower = address.toLowerCase();
-    return stmt.all(chainId, addressLower, addressLower, limit) as EvmTxRecord[];
+    return stmt.all(chainId, addressLower, addressLower, limit, offset) as EvmTxRecord[];
   }
 
-  getRecentSolanaSlots(chainId: string, limit: number) {
+  getRecentSolanaSlots(chainId: string, limit: number, offset: number = 0) {
     const stmt = this.db.prepare(
-      'select * from solana_slots where chain_id = ? order by slot desc limit ?'
+      'select * from solana_slots where chain_id = ? order by slot desc limit ? offset ?'
     );
-    return stmt.all(chainId, limit) as SolanaSlotRecord[];
+    return stmt.all(chainId, limit, offset) as SolanaSlotRecord[];
   }
 
-  getRecentSolanaTxs(chainId: string, limit: number) {
+  getRecentSolanaTxs(chainId: string, limit: number, offset: number = 0) {
     const stmt = this.db.prepare(
-      'select * from solana_txs where chain_id = ? order by slot desc limit ?'
+      'select * from solana_txs where chain_id = ? order by slot desc limit ? offset ?'
     );
-    return stmt.all(chainId, limit) as SolanaTxRecord[];
+    return stmt.all(chainId, limit, offset) as SolanaTxRecord[];
   }
 }

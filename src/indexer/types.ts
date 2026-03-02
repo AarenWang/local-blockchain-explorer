@@ -7,6 +7,8 @@ export interface ChainConfig {
   rpcUrl: string;
   // Whether to index this chain (default: true)
   indexing?: boolean;
+  // Runtime pause state (controlled via API)
+  paused?: boolean;
 }
 
 export interface IndexerConfig {

@@ -23,6 +23,8 @@ export interface ChainConfig {
   wsUrl?: string;
   chainId?: number;
   enabled: boolean;
+  // Indexer paused state (controlled via API)
+  paused?: boolean;
   // EVM chains use erc20Tokens, Solana chains use splTokens
   erc20Tokens?: Erc20TokenInfo[];
   splTokens?: SplTokenInfo[];

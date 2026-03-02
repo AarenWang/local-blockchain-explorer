@@ -13,15 +13,6 @@ const main = async () => {
 
   const cache = new RedisCache(config.redisUrl);
 
-  // For test chains, clear old data on startup to avoid stale data after restart
-  for (const chain of config.chains) {
-    const isTestChain = chain.id.includes('local') || chain.id.includes('test') || chain.id.includes('anvil');
-    if (isTestChain && chain.indexing !== false) {
-      logInfo(`Clearing old data for test chain: ${chain.id}`);
-      store.clearChainData(chain.id);
-    }
-  }
-
   // Only start indexers for chains where indexing is enabled (or not explicitly disabled)
   const evmIndexers = config.chains
     .filter((chain) => chain.type === 'EVM' && (chain.indexing !== false))

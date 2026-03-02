@@ -38,33 +38,59 @@ export const createApiServer = (
     res.json(chains);
   });
 
+  // Pause/resume chain indexing
+  app.post('/chain/:id/pause', (req, res) => {
+    const chain = chains.find(c => c.id === req.params.id);
+    if (!chain) {
+      res.status(404).json({ error: 'Chain not found' });
+      return;
+    }
+    chain.paused = true;
+    logInfo(`Chain ${chain.name} (${chain.id}) paused`);
+    res.json({ success: true, paused: true });
+  });
+
+  app.post('/chain/:id/resume', (req, res) => {
+    const chain = chains.find(c => c.id === req.params.id);
+    if (!chain) {
+      res.status(404).json({ error: 'Chain not found' });
+      return;
+    }
+    chain.paused = false;
+    logInfo(`Chain ${chain.name} (${chain.id}) resumed`);
+    res.json({ success: true, paused: false });
+  });
+
   app.get('/chain/:id/evm/blocks', async (req, res) => {
     const chainId = req.params.id;
     const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
     const cached = await cache.getRecentEvmBlocks(chainId, limit);
-    if (cached.length > 0) {
+    if (cached.length > 0 && offset === 0) {
       res.json(cached);
       return;
     }
-    res.json(store.getRecentEvmBlocks(chainId, limit));
+    res.json(store.getRecentEvmBlocks(chainId, limit, offset));
   });
 
   app.get('/chain/:id/evm/txs', async (req, res) => {
     const chainId = req.params.id;
     const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
     const cached = await cache.getRecentEvmTxs(chainId, limit);
-    if (cached.length > 0) {
+    if (cached.length > 0 && offset === 0) {
       res.json(cached);
       return;
     }
-    res.json(store.getRecentEvmTxs(chainId, limit));
+    res.json(store.getRecentEvmTxs(chainId, limit, offset));
   });
 
   app.get('/chain/:id/evm/address/:address/txs', (req, res) => {
     const chainId = req.params.id;
     const address = req.params.address;
     const limit = Number(req.query.limit ?? 20);
-    res.json(store.getEvmAddressTxs(chainId, address, limit));
+    const offset = Number(req.query.offset ?? 0);
+    res.json(store.getEvmAddressTxs(chainId, address, limit, offset));
   });
 
   // Get ERC20 transfers for an address
@@ -177,23 +203,25 @@ export const createApiServer = (
   app.get('/chain/:id/solana/slots', async (req, res) => {
     const chainId = req.params.id;
     const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
     const cached = await cache.getRecentSolanaSlots(chainId, limit);
-    if (cached.length > 0) {
+    if (cached.length > 0 && offset === 0) {
       res.json(cached);
       return;
     }
-    res.json(store.getRecentSolanaSlots(chainId, limit));
+    res.json(store.getRecentSolanaSlots(chainId, limit, offset));
   });
 
   app.get('/chain/:id/solana/txs', async (req, res) => {
     const chainId = req.params.id;
     const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
     const cached = await cache.getRecentSolanaTxs(chainId, limit);
-    if (cached.length > 0) {
+    if (cached.length > 0 && offset === 0) {
       res.json(cached);
       return;
     }
-    res.json(store.getRecentSolanaTxs(chainId, limit));
+    res.json(store.getRecentSolanaTxs(chainId, limit, offset));
   });
 
   // ===== Role Management Endpoints =====

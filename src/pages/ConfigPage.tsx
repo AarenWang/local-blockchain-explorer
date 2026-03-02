@@ -1,8 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChainConfig, ChainType, Erc20TokenInfo, SplTokenInfo, useConfigStore } from '../state/configStore';
 import { fetchJsonRpc, measureRpc } from '../data/rpc';
 import { truncateMiddle } from '../data/format';
+
+// Indexer chain status from API
+interface IndexerChainStatus {
+  id: string;
+  type: string;
+  name: string;
+  rpcUrl: string;
+  indexing?: boolean;
+  paused?: boolean;
+}
 
 const emptyDraft = (): ChainConfig => ({
   id: '',
@@ -43,6 +53,10 @@ const ConfigPage = () => {
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<ChainConfig | null>(null);
   const [deleteInput, setDeleteInput] = useState('');
+
+  // Indexer state
+  const [indexerChains, setIndexerChains] = useState<IndexerChainStatus[]>([]);
+  const [loadingIndexer, setLoadingIndexer] = useState(false);
 
   const chainStatus = useMemo(() => {
     if (!activeChain) {
@@ -362,6 +376,54 @@ const ConfigPage = () => {
     }
   };
 
+  // Load indexer chain status
+  const loadIndexerStatus = async () => {
+    setLoadingIndexer(true);
+    try {
+      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+      const response = await fetch(`${apiBase}/chains`);
+      if (response.ok) {
+        const data = await response.json();
+        setIndexerChains(data);
+      }
+    } catch (err) {
+      console.error('Failed to load indexer status:', err);
+    } finally {
+      setLoadingIndexer(false);
+    }
+  };
+
+  // Pause/resume chain indexing
+  const toggleIndexerPause = async (chainId: string, pause: boolean) => {
+    try {
+      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+      const endpoint = pause ? 'pause' : 'resume';
+      const response = await fetch(`${apiBase}/chain/${chainId}/${endpoint}`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        // Refresh indexer status
+        loadIndexerStatus();
+      }
+    } catch (err) {
+      console.error('Failed to toggle indexer pause:', err);
+    }
+  };
+
+  // Get indexer paused status for a chain
+  const getIndexerPaused = (chainId: string): boolean | undefined => {
+    const indexerChain = indexerChains.find(c => c.id === chainId);
+    return indexerChain?.paused;
+  };
+
+  // Load indexer status on mount
+  useEffect(() => {
+    loadIndexerStatus();
+    // Refresh indexer status every 5 seconds
+    const interval = setInterval(loadIndexerStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="page">
       <div className="page-header">
@@ -411,6 +473,14 @@ const ConfigPage = () => {
                 <button type="button" onClick={() => setActiveChain(chain.id)}>
                   {chain.enabled ? 'Active' : 'Activate'}
                 </button>
+                <button
+                  type="button"
+                  className={getIndexerPaused(chain.id) ? 'warning' : undefined}
+                  onClick={() => toggleIndexerPause(chain.id, !getIndexerPaused(chain.id))}
+                  title={getIndexerPaused(chain.id) ? 'Resume indexing' : 'Pause indexing'}
+                >
+                  {getIndexerPaused(chain.id) ? '▶ Resume' : '⏸ Pause'}
+                </button>
                 <button type="button" onClick={() => startEdit(chain)}>
                   Edit
                 </button>
@@ -427,6 +497,28 @@ const ConfigPage = () => {
         <h2>Status</h2>
         <p>Active chain: {chainStatus}</p>
         <p>{latency ? `RPC Latency: ${latency}ms` : 'RPC Latency: -'}</p>
+        <div style={{ marginTop: '12px' }}>
+          <h3>Indexer Status</h3>
+          {loadingIndexer ? (
+            <p className="muted">Loading indexer status...</p>
+          ) : indexerChains.length === 0 ? (
+            <p className="muted">No indexer chains found.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {indexerChains.map((ic) => (
+                <div key={ic.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                  <span style={{ color: ic.paused ? '#f59e0b' : '#10b981' }}>
+                    {ic.paused ? '⏸' : '●'}
+                  </span>
+                  <span>{ic.name}</span>
+                  <span className="muted">
+                    ({ic.paused ? 'paused' : 'indexing'})
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Edit/Add Chain Modal */}

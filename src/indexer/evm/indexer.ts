@@ -67,6 +67,11 @@ export class EvmIndexer {
     this.running = true;
     logInfo(`EVM indexer started (${this.chain.name})`);
     while (this.running) {
+      // Check if chain is paused
+      if (this.chain.paused) {
+        await sleep(this.pollInterval);
+        continue;
+      }
       try {
         await this.tick();
       } catch (error) {
