@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDateTime, formatNumber, truncateMiddle } from '../data/format';
 import { ChainConfig } from '../state/configStore';
@@ -19,6 +19,8 @@ interface EvmTxSummary {
   gasPrice?: string;
 }
 
+const PAGE_SIZE = 50;
+
 const EvmHomePage = ({ chain }: EvmHomePageProps) => {
   const [status, setStatus] = useState('Loading...');
   const [latency, setLatency] = useState<number | null>(null);
@@ -27,6 +29,50 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
   const [gasPrice, setGasPrice] = useState<string>('');
   const [blocks, setBlocks] = useState<EvmBlockSummary[]>([]);
   const [recentTxs, setRecentTxs] = useState<EvmTxSummary[]>([]);
+  const [blocksPage, setBlocksPage] = useState(0);
+  const [blocksHasMore, setBlocksHasMore] = useState(true);
+  const [txsPage, setTxsPage] = useState(0);
+  const [txsHasMore, setTxsHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const loadPage = useCallback(async (page: number, type: 'blocks' | 'txs') => {
+    const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
+    const offset = page * PAGE_SIZE;
+    const url = type === 'blocks'
+      ? `${apiBase}/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}&offset=${offset}`
+      : `${apiBase}/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}&offset=${offset}`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Indexer API unavailable');
+    }
+    const data = await response.json();
+    return data as (EvmBlockSummary | EvmTxSummary)[];
+  }, [chain.id]);
+
+  const loadMore = useCallback(async (type: 'blocks' | 'txs') => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      if (type === 'blocks') {
+        const nextPage = blocksPage + 1;
+        const newBlocks = await loadPage(nextPage, 'blocks');
+        setBlocks(prev => [...prev, ...newBlocks as EvmBlockSummary[]]);
+        setBlocksPage(nextPage);
+        setBlocksHasMore(newBlocks.length === PAGE_SIZE);
+      } else {
+        const nextPage = txsPage + 1;
+        const newTxs = await loadPage(nextPage, 'txs');
+        setRecentTxs(prev => [...prev, ...newTxs as EvmTxSummary[]]);
+        setTxsPage(nextPage);
+        setTxsHasMore(newTxs.length === PAGE_SIZE);
+      }
+    } catch (error) {
+      console.error('Failed to load more:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, blocksPage, txsPage, loadPage]);
 
   useEffect(() => {
     let active = true;
@@ -36,8 +82,8 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
         const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
         const start = performance.now();
         const [blocksResponse, txsResponse] = await Promise.all([
-          fetch(`${apiBase}/chain/${chain.id}/evm/blocks?limit=6`),
-          fetch(`${apiBase}/chain/${chain.id}/evm/txs?limit=12`)
+          fetch(`${apiBase}/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}`),
+          fetch(`${apiBase}/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}`)
         ]);
         if (!blocksResponse.ok || !txsResponse.ok) {
           throw new Error('Indexer API unavailable');
@@ -57,10 +103,12 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
         setStatus('Connected');
         setBlocks(blocksData);
         setRecentTxs(txsData);
+        setBlocksHasMore(blocksData.length === PAGE_SIZE);
+        setTxsHasMore(txsData.length === PAGE_SIZE);
 
         const gasValue = txsData.find((item) => item.gasPrice)?.gasPrice;
         if (gasValue && gasValue.startsWith('0x')) {
-          setGasPrice(`${formatNumber(parseInt(gasValue, 16))} wei`);
+          setGasPrice(`${formatNumber(parseInt(gasPrice, 16))} wei`);
         } else {
           setGasPrice(gasValue ?? '-');
         }
@@ -115,25 +163,36 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
         <div className="card">
           <div className="section-title">
             <h2>Latest Blocks</h2>
-            <span className="muted">Blocks</span>
+            <span className="muted">{blocks.length} blocks</span>
           </div>
           <div className="list-table">
             {blocks.length === 0 ? (
               <div className="empty-state">No blocks yet.</div>
             ) : (
-              blocks.map((block) => (
-                <Link
-                  key={block.number}
-                  to={`/chain/${chain.id}/evm/block/${block.number}`}
-                  className="list-row"
-                >
-                  <div>
-                    <div className="list-primary">#{block.number}</div>
-                    <div className="list-secondary">{block.txCount} tx</div>
-                  </div>
-                  <div className="list-meta">{formatDateTime(block.timestamp)}</div>
-                </Link>
-              ))
+              <>
+                {blocks.map((block) => (
+                  <Link
+                    key={block.number}
+                    to={`/chain/${chain.id}/evm/block/${block.number}`}
+                    className="list-row"
+                  >
+                    <div>
+                      <div className="list-primary">#{block.number}</div>
+                      <div className="list-secondary">{block.txCount} tx</div>
+                    </div>
+                    <div className="list-meta">{formatDateTime(block.timestamp)}</div>
+                  </Link>
+                ))}
+                {blocksHasMore && (
+                  <button
+                    className="list-row load-more-button"
+                    onClick={() => loadMore('blocks')}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Loading...' : `Load More (${PAGE_SIZE})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -141,25 +200,36 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
         <div className="card">
           <div className="section-title">
             <h2>Latest Transactions</h2>
-            <span className="muted">Transactions</span>
+            <span className="muted">{recentTxs.length} transactions</span>
           </div>
           <div className="list-table">
             {recentTxs.length === 0 ? (
               <div className="empty-state">No transactions yet.</div>
             ) : (
-              recentTxs.map((tx) => (
-                <Link
-                  key={tx.hash}
-                  to={`/chain/${chain.id}/evm/tx/${tx.hash}`}
-                  className="list-row"
-                >
-                  <div>
-                    <div className="list-primary mono">{truncateMiddle(tx.hash)}</div>
-                    <div className="list-secondary">Block {tx.blockNumber}</div>
-                  </div>
-                  <div className="list-meta">View</div>
-                </Link>
-              ))
+              <>
+                {recentTxs.map((tx) => (
+                  <Link
+                    key={tx.hash}
+                    to={`/chain/${chain.id}/evm/tx/${tx.hash}`}
+                    className="list-row"
+                  >
+                    <div>
+                      <div className="list-primary mono">{truncateMiddle(tx.hash)}</div>
+                      <div className="list-secondary">Block {tx.blockNumber}</div>
+                    </div>
+                    <div className="list-meta">View</div>
+                  </Link>
+                ))}
+                {txsHasMore && (
+                  <button
+                    className="list-row load-more-button"
+                    onClick={() => loadMore('txs')}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Loading...' : `Load More (${PAGE_SIZE})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

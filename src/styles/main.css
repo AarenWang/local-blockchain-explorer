@@ -713,3 +713,23 @@ button.small {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* Load More button */
+.load-more-button {
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.load-more-button:hover {
+  background: #1e293b;
+}
+
+.load-more-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

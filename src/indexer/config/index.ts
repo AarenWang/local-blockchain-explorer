@@ -35,8 +35,8 @@ export const loadConfig = (): IndexerConfig => {
     sqlitePath: process.env.SQLITE_PATH ?? './data/indexer.db',
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 3000),
-    initialBackfill: Number(process.env.INITIAL_BACKFILL ?? 10),
-    backfillFromGenesis: (process.env.BACKFILL_FROM_GENESIS ?? '').toLowerCase() === 'true',
+    initialBackfill: Number(process.env.INITIAL_BACKFILL ?? 0), // 0 = backfill from genesis
+    backfillFromGenesis: (process.env.BACKFILL_FROM_GENESIS ?? 'true').toLowerCase() === 'true', // default true
     apiPort: Number(process.env.INDEXER_API_PORT ?? 7070),
     chains: parseChains()
   };
