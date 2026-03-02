@@ -1,147 +1,152 @@
 # Local Blockchain Explorer
 
-A local blockchain explorer for monitoring and inspecting EVM and Solana chains. Features a web UI for exploring blocks, transactions, and wallet balances, plus an indexer service that tracks chain data.
+English | [简体中文](README_CN.md)
 
-## Architecture
+A powerful local blockchain explorer for monitoring and inspecting EVM and Solana chains. Perfect for developers working with local testnets like Anvil, Hardhat, or Solana Test Validator.
 
-- **Explorer**: React + Vite frontend application
-- **Indexer**: Node.js backend with Express API, SQLite storage, and Redis caching
+![Home Page](docs-image/home-page.png)
 
-## Prerequisites
+## Features
 
-- Node.js (v18 or higher)
-- Redis server (for caching)
-- Local blockchain nodes (optional, defaults to Anvil EVM at `http://localhost:8545` and Solana at `http://localhost:8899`)
+### Block & Transaction Exploration
+- **Real-time block monitoring** - View latest blocks with transaction counts, timestamps, and miner info
+- **Transaction details** - Inspect transaction hashes, from/to addresses, gas usage, and status
+- **Pagination support** - Browse through historical data with "Load More" functionality
 
-## Installation
+### Multi-Chain Support
+- **EVM Chains** - Ethereum, Anvil, Hardhat, Foundry, and other EVM-compatible chains
+- **Solana** - Solana local testnet and mainnet support
+- **Easy switching** - Switch between chains directly from the UI
+
+### Wallet & Token Management
+- **HD Wallet derivation** - Derive multiple wallets from a single mnemonic
+- **Balance tracking** - View native and ERC20 token balances
+- **SPL Token support** - Track Solana SPL tokens
+- **Role-based organization** - Organize wallets by roles/projects
+
+![Wallet Page](docs-image/wallet-page.png)
+
+### Address & Transaction Tags
+- **Custom tags** - Label addresses and transactions with custom names and colors
+- **Quick identification** - Easily recognize your wallets and important transactions
+- **Tag management** - View and manage all tags in one place
+
+![Tag Modal](docs-image/tag-modal.png)
+
+### Indexer Service
+- **Automatic data collection** - Indexer automatically tracks blocks and transactions
+- **Pause/Resume control** - Pause indexing for chains that aren't running
+- **Historical data** - Configure backfill from genesis or recent blocks
+- **Fast queries** - SQLite + Redis for quick data retrieval
+
+## Quick Start
 
 ```bash
 # Install dependencies
 npm install
-```
 
-## Configuration
+# Start Redis (required for caching)
+brew services start redis  # macOS
+# or: docker run -d -p 6379:6379 redis
 
-The indexer uses environment variables for configuration. Create a `.env` file in the project root or set the following variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SQLITE_PATH` | `./data/indexer.db` | Path to SQLite database file |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `INDEXER_API_PORT` | `7070` | Port for the indexer API server |
-| `POLL_INTERVAL_MS` | `3000` | Blockchain polling interval in milliseconds |
-| `INITIAL_BACKFILL` | `10` | Number of blocks/slots to backfill on startup |
-| `BACKFILL_FROM_GENESIS` | `false` | Set to `true` to backfill from genesis |
-| `INDEXER_CHAINS_JSON` | (see below) | JSON array of chain configurations |
-
-### Default Chains
-
-If `INDEXER_CHAINS_JSON` is not set, the indexer uses these default chains:
-
-```json
-[
-  {
-    "id": "anvil",
-    "type": "EVM",
-    "name": "Anvil Local",
-    "rpcUrl": "http://localhost:8545"
-  },
-  {
-    "id": "solana-local",
-    "type": "SOLANA",
-    "name": "Solana Local",
-    "rpcUrl": "http://localhost:8899"
-  }
-]
-```
-
-### Custom Chain Configuration
-
-To configure custom chains, set `INDEXER_CHAINS_JSON`:
-
-```bash
-export INDEXER_CHAINS_JSON='[
-  {"id": "mainnet", "type": "EVM", "name": "Ethereum", "rpcUrl": "https://eth.llamarpc.com"},
-  {"id": "solana", "type": "SOLANA", "name": "Solana", "rpcUrl": "https://api.mainnet-beta.solana.com"}
-]'
-```
-
-## Running the Application
-
-### Start Redis (if not running)
-
-```bash
-# macOS
-brew services start redis
-
-# Linux
-sudo systemctl start redis
-
-# Docker
-docker run -d -p 6379:6379 redis
-```
-
-### Start the Indexer
-
-```bash
+# Start the indexer backend
 npm run indexer:dev
-```
 
-The indexer API will be available at `http://localhost:7070`
-
-### Start the Explorer (in a new terminal)
-
-```bash
+# Start the explorer UI (in a new terminal)
 npm run dev
 ```
 
-The explorer UI will be available at `http://localhost:5173`
+Visit:
+- Explorer UI: `http://localhost:5173`
+- Indexer API: `http://localhost:7070`
 
-## Building for Production
+## Usage
 
-```bash
-# Build the frontend
-npm run build
+### Configure Chains
 
-# Preview the production build
-npm run preview
-```
+Go to **Config** page to add your chains:
 
-## Available Scripts
+1. Click **+ Add Chain**
+2. Select chain type (EVM or Solana)
+3. Enter RPC URL (e.g., `http://localhost:8545` for Anvil)
+4. Add ERC20/SPL token addresses for balance tracking
+5. Test connection and save
+
+![Config Page](docs-image/config-page.png)
+
+### Search & Explore
+
+- **Search bar** - Find blocks by number, transactions by hash, or addresses
+- **Home page** - View latest blocks and transactions with pagination
+- **Click any item** - View detailed information
+
+![Block Detail](docs-image/block-detail.png)
+
+### Manage Wallets
+
+1. Go to **Wallets** page
+2. Create a role with your mnemonic phrase
+3. Set derivation path (default: `m/44'/60'/0'/0` for EVM)
+4. View balances for derived addresses
+
+### Pause/Resume Indexing
+
+If a test chain is stopped, pause indexing to avoid errors:
+
+1. Go to **Config** page
+2. Find the chain and click **⏸ Pause**
+3. Click **▶ Resume** when the chain is running again
+
+## Default Configuration
+
+Out of the box, the explorer connects to:
+
+| Chain | Type | RPC URL |
+|-------|------|---------|
+| Anvil Local | EVM | http://localhost:8545 |
+| Solana Local | Solana | http://localhost:8899 |
+
+## Configuration Options
+
+Set environment variables to customize behavior:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
+| `SQLITE_PATH` | `./data/indexer.db` | Database file path |
+| `INDEXER_API_PORT` | `7070` | API server port |
+| `BACKFILL_FROM_GENESIS` | `true` | Index from block 0 |
+
+## Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start the explorer frontend in development mode |
-| `npm run build` | Build the explorer for production |
-| `npm run preview` | Preview the production build locally |
-| `npm run lint` | Run ESLint to check code quality |
-| `npm run indexer:dev` | Start the indexer backend service |
+| `npm run dev` | Start explorer UI |
+| `npm run indexer:dev` | Start indexer service |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
 
 ## API Endpoints
 
-The indexer API runs on port 7070 (configurable via `INDEXER_API_PORT`):
+The indexer exposes REST APIs at `http://localhost:7070`:
 
-### Chain Data
+- `GET /chains` - List chains
+- `GET /chain/:id/evm/blocks` - Get EVM blocks (supports `?limit=50&offset=0`)
+- `GET /chain/:id/evm/txs` - Get EVM transactions
+- `GET /chain/:id/evm/address/:address/txs` - Get address transactions
+- `POST /chain/:id/pause` - Pause indexing
+- `POST /chain/:id/resume` - Resume indexing
+- `GET /roles` - List wallet roles
+- `GET /tags` - List all tags
+- `PUT /tags` - Create/update tags
 
-- `GET /chains` - List all configured chains
-- `GET /chain/:id/evm/blocks` - Get recent EVM blocks
-- `GET /chain/:id/evm/txs` - Get recent EVM transactions
-- `GET /chain/:id/evm/address/:address/txs` - Get transactions for an address
-- `GET /chain/:id/solana/slots` - Get recent Solana slots
-- `GET /chain/:id/solana/txs` - Get recent Solana transactions
+## Tech Stack
 
-### Wallet Management
+- **Frontend**: React + Vite + TypeScript
+- **Backend**: Node.js + Express
+- **Database**: SQLite (data storage) + Redis (caching)
+- **Styling**: CSS with dark theme
 
-- `GET /roles` - List all roles
-- `GET /roles/:id` - Get a specific role
-- `POST /roles` - Create a new role
-- `PATCH /roles/:id` - Update a role
-- `DELETE /roles/:id` - Delete a role
-- `GET /roles/:roleId/balances` - Get wallet balances for a role
+## License
 
-### ERC20 Token Management
-
-- `GET /erc20-tokens` - List all ERC20 tokens
-- `POST /erc20-tokens` - Create a new token
-- `PATCH /erc20-tokens/:id` - Update a token
-- `DELETE /erc20-tokens/:id` - Delete a token
+MIT
