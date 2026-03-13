@@ -97,7 +97,7 @@ const EvmAddressPage = () => {
         setTxCount(parseInt(nonceHex, 16));
         setRecentTxs(txs);
         // EOA has no code (0x), contract has code
-        setIsContract(code && code !== '0x');
+        setIsContract(code && code !== '0x' ? true : false);
         setError('');
 
         // Load ERC20 data

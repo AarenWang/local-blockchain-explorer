@@ -44,14 +44,21 @@ const TagManager = ({ type, target }: TagManagerProps) => {
       if (response.ok) {
         const data = await response.json();
         setTag(data);
-        setLabel(data.label);
-        setNote(data.note || '');
-        setColor(data.color);
+        setLabel(data?.label || '');
+        setNote(data?.note || '');
+        setColor(data?.color || '#3b82f6');
       } else {
         setTag(null);
+        setLabel('');
+        setNote('');
+        setColor('#3b82f6');
       }
     } catch (err) {
       console.error('Failed to load tag:', err);
+      setTag(null);
+      setLabel('');
+      setNote('');
+      setColor('#3b82f6');
     }
   };
 

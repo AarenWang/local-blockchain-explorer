@@ -4,6 +4,7 @@ import { SqliteStore } from './storage/sqlite';
 import { EvmIndexer } from './evm/indexer';
 import { SolanaIndexer } from './solana/indexer';
 import { createApiServer } from './api/server';
+import { AbiRegistry } from './abi/registry';
 import { logInfo } from './utils/logger';
 
 const main = async () => {
@@ -12,6 +13,10 @@ const main = async () => {
   store.init();
 
   const cache = new RedisCache(config.redisUrl);
+
+  // Initialize ABI registry
+  const abiRegistry = new AbiRegistry(config.abisPath || './data/abis');
+  await abiRegistry.loadAll();
 
   // Only start indexers for chains where indexing is enabled (or not explicitly disabled)
   const evmIndexers = config.chains
@@ -50,7 +55,7 @@ const main = async () => {
     indexer.start();
   }
 
-  const app = createApiServer(config.chains, store, cache);
+  const app = createApiServer(config.chains, store, cache, abiRegistry);
   app.listen(config.apiPort, () => {
     logInfo(`Indexer API listening on :${config.apiPort}`);
   });
