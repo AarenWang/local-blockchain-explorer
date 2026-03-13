@@ -62,6 +62,7 @@ const EvmAddressPage = () => {
   const [recentTxs, setRecentTxs] = useState<AddressTxSummary[]>([]);
   const [erc20Balances, setErc20Balances] = useState<Erc20Balance[]>([]);
   const [erc20Transfers, setErc20Transfers] = useState<Erc20Transfer[]>([]);
+  const [isContract, setIsContract] = useState<boolean | null>(null);
   const [loadingErc20, setLoadingErc20] = useState(false);
   const [loadingTransfers, setLoadingTransfers] = useState(false);
   const [error, setError] = useState('');
@@ -80,6 +81,10 @@ const EvmAddressPage = () => {
           address,
           'latest'
         ]);
+        const code = await fetchJsonRpc<string>(chain.rpcUrl, 'eth_getCode', [
+          address,
+          'latest'
+        ]);
         const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
         const txResponse = await fetch(
           `${apiBase}/chain/${chain.id}/evm/address/${address}/txs?limit=20`
@@ -91,6 +96,8 @@ const EvmAddressPage = () => {
         setBalance(balanceHex);
         setTxCount(parseInt(nonceHex, 16));
         setRecentTxs(txs);
+        // EOA has no code (0x), contract has code
+        setIsContract(code && code !== '0x');
         setError('');
 
         // Load ERC20 data
@@ -195,6 +202,10 @@ const EvmAddressPage = () => {
   const rows = [
     { label: 'Address', value: address, copy: address },
     {
+      label: 'Type',
+      value: isContract === null ? 'Loading...' : isContract ? 'Contract' : 'EOA'
+    },
+    {
       label: 'Balance',
       value: balance ? `${fromHexToEth(balance)} ${chain.nativeTokenSymbol}` : '-'
     },
@@ -214,7 +225,18 @@ const EvmAddressPage = () => {
       <div className="page-header">
         <div>
           <h1>Address</h1>
-          <p>{chain.chainName}</p>
+          <p>
+            {chain.chainName}
+            {isContract !== null && (
+              <span style={{ marginLeft: '12px' }}>
+                {isContract ? (
+                  <span className="status-pill in">Contract</span>
+                ) : (
+                  <span className="status-pill">EOA</span>
+                )}
+              </span>
+            )}
+          </p>
         </div>
         <TagManager type="address" target={address} />
       </div>
