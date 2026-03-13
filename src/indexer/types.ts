@@ -9,6 +9,8 @@ export interface ChainConfig {
   indexing?: boolean;
   // Runtime pause state (controlled via API)
   paused?: boolean;
+  // Native token symbol (e.g., ETH, BNB, MATIC)
+  nativeTokenSymbol?: string;
 }
 
 export interface IndexerConfig {
@@ -19,6 +21,7 @@ export interface IndexerConfig {
   backfillFromGenesis: boolean;
   apiPort: number;
   chains: ChainConfig[];
+  abisPath?: string;
 }
 
 export interface EvmBlockRecord {

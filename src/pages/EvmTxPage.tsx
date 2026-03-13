@@ -5,6 +5,10 @@ import { formatNumber, fromHexToEth } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
 import KeyValueTable from '../components/KeyValueTable';
 import TagManager from '../components/TagManager';
+import DecodedTxView from '../components/DecodedTxView';
+import { getAbiRegistry } from '../data/abiRegistry';
+import { decodeTransaction } from '../data/abiDecoder';
+import { DecodedTransaction } from '../data/abi/types';
 
 const TRANSFER_EVENT_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
@@ -17,6 +21,7 @@ interface EvmTransaction {
   gas: string;
   gasPrice: string;
   nonce: string;
+  input: string;
 }
 
 interface EvmReceipt {
@@ -47,7 +52,7 @@ interface Erc20Transfer {
   tokenAddress: string;
   tokenSymbol?: string;
   from: string;
-  to: string;
+  to: string | null;
   value: string;
   valueFormatted: number;
 }
@@ -65,6 +70,9 @@ const EvmTxPage = () => {
   const [erc20Transfers, setErc20Transfers] = useState<Erc20Transfer[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState('');
+  const [decodedTx, setDecodedTx] = useState<DecodedTransaction | null>(null);
+  const [isDecoding, setIsDecoding] = useState(false);
+  const [logsExpanded, setLogsExpanded] = useState(false);
 
   // Helper to get tag for an address
   const getAddressTag = (address: string): Tag | undefined => {
@@ -160,6 +168,37 @@ const EvmTxPage = () => {
     load();
   }, [chain, hash]);
 
+  // Decode transaction when receipt is available
+  useEffect(() => {
+    const decodeTransactionData = async () => {
+      if (!receipt || !tx || !chain) {
+        return;
+      }
+
+      setIsDecoding(true);
+      try {
+        const abiRegistry = getAbiRegistry();
+
+        const decoded = await decodeTransaction(
+          chain?.id || '',
+          hash || '',
+          tx.to,
+          tx.input,
+          receipt.logs,
+          abiRegistry
+        );
+
+        setDecodedTx(decoded);
+      } catch (err) {
+        console.error('Failed to decode transaction:', err);
+      } finally {
+        setIsDecoding(false);
+      }
+    };
+
+    decodeTransactionData();
+  }, [receipt, tx, chain, hash]);
+
   if (!chain) {
     return (
       <div className="page">
@@ -215,7 +254,7 @@ const EvmTxPage = () => {
       ),
       copy: tx.to ?? undefined
     },
-    { label: 'Value', value: `${fromHexToEth(tx.value)} ${chain.nativeTokenSymbol}` },
+    { label: 'Value', value: `${fromHexToEth(tx.value)} ${chain.nativeTokenSymbol || 'ETH'}` },
     { label: 'Gas Limit', value: formatNumber(parseInt(tx.gas, 16)) },
     { label: 'Gas Price', value: formatNumber(parseInt(tx.gasPrice, 16)) },
     { label: 'Gas Used', value: receipt ? formatNumber(parseInt(receipt.gasUsed, 16)) : '-' },
@@ -231,7 +270,8 @@ const EvmTxPage = () => {
   };
 
   // Render address with tag
-  const renderAddress = (address: string) => {
+  const renderAddress = (address: string | null) => {
+    if (!address) return <span>-</span>;
     const tag = getAddressTag(address);
     return (
       <div className="address-with-tag">
@@ -262,9 +302,9 @@ const EvmTxPage = () => {
       <div className="page-header">
         <div>
           <h1>Transaction</h1>
-          <p>{chain.chainName}</p>
+          <p>{chain?.chainName || 'Unknown Chain'}</p>
         </div>
-        <TagManager type="tx" target={hash} />
+        <TagManager type="tx" target={hash || ''} />
       </div>
 
       <section className="card">
@@ -304,9 +344,21 @@ const EvmTxPage = () => {
         </section>
       )}
 
+      {/* Decoded Contract Activity */}
+      {decodedTx && !isDecoding && (
+        <DecodedTxView decoded={decodedTx} chainId={chain.id} />
+      )}
+
       <section className="card">
-        <h2>Logs (Raw)</h2>
-        <pre className="code-block">{JSON.stringify(receipt?.logs ?? [], null, 2)}</pre>
+        <div className="section-header">
+          <h2>Logs (Raw)</h2>
+          <button className="expand-button" onClick={() => setLogsExpanded(!logsExpanded)}>
+            {logsExpanded ? '▼' : '▶'}
+          </button>
+        </div>
+        {logsExpanded && (
+          <pre className="code-block">{JSON.stringify(receipt?.logs ?? [], null, 2)}</pre>
+        )}
       </section>
     </div>
   );

@@ -3,13 +3,15 @@ import { RedisCache } from '../cache/redis';
 import { SqliteStore } from '../storage/sqlite';
 import { ChainConfig, RoleRecord, Erc20TokenConfig } from '../types';
 import { WalletService } from '../wallet/walletService';
+import { AbiRegistry } from '../abi/registry';
 import { Mnemonic } from 'ethers';
 import { logInfo, logError } from '../utils/logger';
 
 export const createApiServer = (
   chains: ChainConfig[],
   store: SqliteStore,
-  cache: RedisCache
+  cache: RedisCache,
+  abiRegistry: AbiRegistry
 ) => {
   const app = express();
 
@@ -506,6 +508,36 @@ export const createApiServer = (
       }
       store.deleteTag(type as 'address' | 'tx', target);
       res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // ===== Contract ABI Endpoints =====
+
+  // Get ABI for a specific contract
+  app.get('/api/contract-abi/:chainId/:address', (req, res) => {
+    try {
+      const { chainId, address } = req.params;
+      const abi = abiRegistry.getAbi(chainId, address);
+      if (!abi) {
+        res.status(404).json({ error: 'ABI not found' });
+        return;
+      }
+      res.json(abi);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // List all registered ABIs
+  app.get('/api/contract-abis', (req, res) => {
+    try {
+      const chainId = req.query.chainId as string | undefined;
+      const abis = chainId
+        ? abiRegistry.listAbisByChain(chainId)
+        : abiRegistry.listAbis();
+      res.json(abis);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
