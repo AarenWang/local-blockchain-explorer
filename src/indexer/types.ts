@@ -42,6 +42,7 @@ export interface EvmTxRecord {
   from: string;
   to: string | null;
   valueWei: string;
+  value?: string;  // Native token transfer value (formatted)
   gasPrice: string;
   gasUsed: string | null;
   status: number | null;

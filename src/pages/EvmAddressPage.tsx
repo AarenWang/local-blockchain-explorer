@@ -11,6 +11,7 @@ interface AddressTxSummary {
   blockNumber: number;
   from: string;
   to: string | null;
+  value?: string;  // Native token transfer value (formatted, e.g., "1.5 ETH")
 }
 
 interface Erc20Balance {
@@ -66,6 +67,7 @@ const EvmAddressPage = () => {
   const [loadingErc20, setLoadingErc20] = useState(false);
   const [loadingTransfers, setLoadingTransfers] = useState(false);
   const [error, setError] = useState('');
+  const [nativeBalance, setNativeBalance] = useState<string>('0');
 
   useEffect(() => {
     const load = async () => {
@@ -93,9 +95,19 @@ const EvmAddressPage = () => {
           throw new Error('Indexer API unavailable');
         }
         const txs = (await txResponse.json()) as AddressTxSummary[];
-        setBalance(balanceHex);
+        const balanceValue = BigInt(balanceHex);
+        setNativeBalance(balanceValue.toString());
         setTxCount(parseInt(nonceHex, 16));
-        setRecentTxs(txs);
+        // Map snake_case API response to camelCase
+        setRecentTxs(
+          txs.map((tx) => ({
+            hash: tx.hash,
+            blockNumber: (tx as any).block_number || tx.blockNumber,
+            from: (tx as any).from_addr || tx.from,
+            to: (tx as any).to_addr || tx.to,
+            value: (tx as any).value || tx.value
+          }))
+        );
         // EOA has no code (0x), contract has code
         setIsContract(code && code !== '0x' ? true : false);
         setError('');
@@ -330,8 +342,9 @@ const EvmAddressPage = () => {
           <div className="list">
             {recentTxs.map((tx) => (
               <Link key={tx.hash} className="list-item" to={`/chain/${chain.id}/evm/tx/${tx.hash}`}>
-                <span>{truncateMiddle(tx.hash)}</span>
-                <span>Height: {tx.blockNumber}</span>
+                <span className="mono">{tx.hash}</span>
+                <span>{tx.blockNumber}</span>
+                {tx.value && <span style={{ marginLeft: '8px', color: '#9ca3af' }}>{tx.value}</span>}
               </Link>
             ))}
           </div>

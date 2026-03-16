@@ -47,6 +47,7 @@ export class SqliteStore {
         from_addr text not null,
         to_addr text,
         value_wei text not null,
+        value text,
         gas_price text not null,
         gas_used text,
         status integer,
@@ -403,9 +404,9 @@ export class SqliteStore {
 
     const insertTx = this.db.prepare(`
       insert into evm_txs
-        (chain_id, hash, block_number, from_addr, to_addr, value_wei, gas_price, gas_used, status)
+        (chain_id, hash, block_number, from_addr, to_addr, value_wei, value, gas_price, gas_used, status)
       values
-        (@chainId, @hash, @blockNumber, @from, @to, @valueWei, @gasPrice, @gasUsed, @status)
+        (@chainId, @hash, @blockNumber, @from, @to, @valueWei, @value, @gasPrice, @gasUsed, @status)
       on conflict(hash) do update set
         block_number=excluded.block_number,
         from_addr=excluded.from_addr,

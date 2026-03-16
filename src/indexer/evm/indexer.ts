@@ -37,6 +37,21 @@ interface EvmReceipt {
 // keccak256("Transfer(address,address,uint256)") = 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
 const ERC20_TRANSFER_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
+// Format native token value (Wei to ETH format)
+function formatNativeValue(valueWei: string | null): string {
+  if (!valueWei || valueWei === '0x') return '';
+  try {
+    const value = BigInt(valueWei);
+    const ethValue = Number(value) / 1e18;
+    // Format with up to 4 decimal places for smaller amounts
+    if (ethValue < 0.0001 && ethValue > 0) return '<0.0001';
+    if (ethValue >= 1_000_000) return `${(ethValue / 1e18).toLocaleString(undefined, { maximumFractionDigits: 6 })}M`;
+    if (ethValue >= 1_000) return ethValue.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  } catch {
+    return valueWei;
+  }
+}
+
 export class EvmIndexer {
   private chain: ChainConfig;
   private store: SqliteStore;
@@ -61,6 +76,22 @@ export class EvmIndexer {
     this.pollInterval = pollInterval;
     this.backfill = backfill;
     this.backfillFromGenesis = backfillFromGenesis;
+  }
+
+  // Format native token value (Wei to ETH format)
+  private formatNativeValue(valueWei: string | null): string {
+    if (!valueWei || valueWei === '0x') return '';
+    try {
+      const value = BigInt(valueWei);
+      const ethValue = Number(value) / 1e18;
+      // Format with up to 4 decimal places for smaller amounts
+      if (ethValue < 0.0001 && ethValue > 0) return '<0.0001';
+      if (ethValue >= 1_000_000) return `${(ethValue / 1e18).toLocaleString(undefined, { maximumFractionDigits: 6 })}M`;
+      if (ethValue >= 1_000) return ethValue.toLocaleString(undefined, { maximumFractionDigits: 4 });
+      return ethValue.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    } catch {
+      return valueWei;
+    }
   }
 
   async start() {
@@ -127,6 +158,7 @@ export class EvmIndexer {
             from: tx.from,
             to: tx.to,
             valueWei: tx.value,
+            value: tx.value && tx.value !== '0x' ? this.formatNativeValue(tx.value) : null,
             gasPrice: tx.gasPrice,
             gasUsed: receipt?.gasUsed ?? null,
             status: receipt?.status ? parseInt(receipt.status, 16) : null

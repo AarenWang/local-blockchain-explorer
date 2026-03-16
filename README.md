@@ -13,6 +13,16 @@ A powerful local blockchain explorer for monitoring and inspecting EVM and Solan
 - **Transaction details** - Inspect transaction hashes, from/to addresses, gas usage, and status
 - **Pagination support** - Browse through historical data with "Load More" functionality
 
+### Contract Call Decoding
+- **Multi-ABI support** - Decode transactions involving multiple contracts (e.g., Safe wallet + ERC20)
+- **Nested call decoding** - View proxy contract execution chains (Safe execTransaction → ERC20 transfer)
+- **Event log decoding** - View decoded event logs with contract type badges
+- **ABI registry** - Manage contract ABIs stored in `data/abis/` directory
+- **Human-readable summaries** - Quick transaction summaries showing what happened
+- **Fallback to raw data** - Show original hex data when ABI is unavailable
+
+![Contract Call Decoding](docs-image/decode-contract-activity.png)
+
 ### Multi-Chain Support
 - **EVM Chains** - Ethereum, Anvil, Hardhat, Foundry, and other EVM-compatible chains
 - **Solana** - Solana local testnet and mainnet support

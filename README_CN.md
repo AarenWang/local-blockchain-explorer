@@ -13,6 +13,16 @@
 - **交易详情** - 检查交易哈希、发送/接收地址、Gas 使用情况和状态
 - **分页支持** - 通过"加载更多"功能浏览历史数据
 
+### 合约调用解码
+- **多 ABI 支持** - 解码涉及多个合约的交易（如 Safe 钱包 + ERC20）
+- **嵌套调用解码** - 查看代理合约执行链（Safe execTransaction → ERC20 transfer）
+- **事件日志解码** - 查看带合约类型徽章的解码事件日志
+- **ABI 注册表** - 管理存储在 `data/abis/` 目录中的合约 ABI
+- **可读摘要** - 快速了解交易发生了什么
+- **原始数据回退** - ABI 不可用时显示原始十六进制数据
+
+![合约调用解码](docs-image/decode-contract-activity.png)
+
 ### 多链支持
 - **EVM 链** - 支持 Ethereum、Anvil、Hardhat、Foundry 和其他 EVM 兼容链
 - **Solana** - 支持 Solana 本地测试网和主网

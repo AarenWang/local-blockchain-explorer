@@ -13,5 +13,18 @@ export default defineConfig({
         rewrite: (path) => path
       }
     }
+  },
+  build: {
+    target: 'es2020',
+    sourcemap: true,
+    minify: true
+  },
+  preview: {
+    target: 'es2020'
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'es2020'
+    }
   }
 });
