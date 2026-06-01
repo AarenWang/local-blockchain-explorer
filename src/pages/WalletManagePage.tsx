@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { apiUrl } from '../api';
 
 interface Role {
   id: string;
@@ -18,6 +19,16 @@ interface Erc20Token {
   created_at: number;
 }
 
+interface SplToken {
+  id: string;
+  chain_id: string;
+  symbol: string;
+  name: string;
+  mint: string;
+  decimals: number;
+  created_at: number;
+}
+
 interface Chain {
   id: string;
   type: 'EVM' | 'SOLANA';
@@ -25,23 +36,24 @@ interface Chain {
   rpcUrl: string;
 }
 
-const API_BASE = 'http://localhost:7070';
+type TokenRecord = Erc20Token | SplToken;
+
+const isSplToken = (token: TokenRecord): token is SplToken => 'mint' in token;
 
 const WalletManagePage = () => {
   const [roles, setRoles] = useState<Role[]>([]);
-  const [tokens, setTokens] = useState<Erc20Token[]>([]);
+  const [erc20Tokens, setErc20Tokens] = useState<Erc20Token[]>([]);
+  const [splTokens, setSplTokens] = useState<SplToken[]>([]);
   const [chains, setChains] = useState<Chain[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showTokenModal, setShowTokenModal] = useState(false);
-  const [editingToken, setEditingToken] = useState<Erc20Token | null>(null);
+  const [editingToken, setEditingToken] = useState<TokenRecord | null>(null);
 
-  // Role form state
   const [roleName, setRoleName] = useState('');
   const [roleMnemonic, setRoleMnemonic] = useState('');
   const [roleDerivationPath, setRoleDerivationPath] = useState("m/44'/60'/0'/0");
 
-  // Token form state
   const [tokenChainId, setTokenChainId] = useState('');
   const [tokenSymbol, setTokenSymbol] = useState('');
   const [tokenName, setTokenName] = useState('');
@@ -54,13 +66,15 @@ const WalletManagePage = () => {
 
   const fetchData = async () => {
     try {
-      const [rolesRes, tokensRes, chainsRes] = await Promise.all([
-        fetch(`${API_BASE}/roles`),
-        fetch(`${API_BASE}/erc20-tokens`),
-        fetch(`${API_BASE}/chains`)
+      const [rolesRes, erc20Res, splRes, chainsRes] = await Promise.all([
+        fetch(apiUrl('/roles')),
+        fetch(apiUrl('/erc20-tokens')),
+        fetch(apiUrl('/spl-tokens')),
+        fetch(apiUrl('/chains'))
       ]);
       setRoles(await rolesRes.json());
-      setTokens(await tokensRes.json());
+      setErc20Tokens(await erc20Res.json());
+      setSplTokens(await splRes.json());
       setChains(await chainsRes.json());
     } catch (error) {
       console.error('Failed to fetch data:', error);
@@ -75,7 +89,7 @@ const WalletManagePage = () => {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/roles`, {
+      const res = await fetch(apiUrl('/roles'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,34 +115,50 @@ const WalletManagePage = () => {
   const handleDeleteRole = async (id: string) => {
     if (!confirm('Are you sure you want to delete this role?')) return;
     try {
-      await fetch(`${API_BASE}/roles/${id}`, { method: 'DELETE' });
+      await fetch(apiUrl(`/roles/${id}`), { method: 'DELETE' });
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Failed to delete role');
     }
   };
+
+  const selectedChain = useMemo(
+    () => chains.find((chain) => chain.id === tokenChainId),
+    [chains, tokenChainId]
+  );
 
   const handleSaveToken = async () => {
     if (!tokenChainId || !tokenSymbol || !tokenName || !tokenAddress) {
       alert('Please fill in all required fields');
       return;
     }
-    try {
-      const url = editingToken
-        ? `${API_BASE}/erc20-tokens/${editingToken.id}`
-        : `${API_BASE}/erc20-tokens`;
-      const method = editingToken ? 'PATCH' : 'POST';
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    const isSolana = selectedChain?.type === 'SOLANA';
+    const basePath = isSolana ? '/spl-tokens' : '/erc20-tokens';
+    const editId = editingToken?.id;
+    const url = editId ? apiUrl(`${basePath}/${editId}`) : apiUrl(basePath);
+    const method = editId ? 'PATCH' : 'POST';
+    const body = isSolana
+      ? {
+          chainId: tokenChainId,
+          symbol: tokenSymbol,
+          name: tokenName,
+          mint: tokenAddress,
+          decimals: tokenDecimals
+        }
+      : {
           chainId: tokenChainId,
           symbol: tokenSymbol,
           name: tokenName,
           address: tokenAddress,
           decimals: tokenDecimals
-        })
+        };
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         setShowTokenModal(false);
@@ -144,12 +174,13 @@ const WalletManagePage = () => {
     }
   };
 
-  const handleDeleteToken = async (id: string) => {
+  const handleDeleteToken = async (token: TokenRecord) => {
     if (!confirm('Are you sure you want to delete this token?')) return;
+    const basePath = isSplToken(token) ? '/spl-tokens' : '/erc20-tokens';
     try {
-      await fetch(`${API_BASE}/erc20-tokens/${id}`, { method: 'DELETE' });
+      await fetch(apiUrl(`${basePath}/${token.id}`), { method: 'DELETE' });
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Failed to delete token');
     }
   };
@@ -162,13 +193,13 @@ const WalletManagePage = () => {
     setTokenDecimals(18);
   };
 
-  const openTokenModal = (token?: Erc20Token) => {
+  const openTokenModal = (token?: TokenRecord) => {
     if (token) {
       setEditingToken(token);
       setTokenChainId(token.chain_id);
       setTokenSymbol(token.symbol);
       setTokenName(token.name);
-      setTokenAddress(token.address);
+      setTokenAddress(isSplToken(token) ? token.mint : token.address);
       setTokenDecimals(token.decimals);
     } else {
       setEditingToken(null);
@@ -177,15 +208,19 @@ const WalletManagePage = () => {
     setShowTokenModal(true);
   };
 
-  const evmChains = useMemo(() => chains.filter(c => c.type === 'EVM'), [chains]);
-  const tokensByChain = useMemo(() => {
-    const grouped: Record<string, Erc20Token[]> = {};
-    tokens.forEach(token => {
+  const solanaChains = useMemo(() => chains.filter(c => c.type === 'SOLANA'), [chains]);
+
+  const groupTokensByChain = <T extends { chain_id: string }>(tokens: T[]) => {
+    const grouped: Record<string, T[]> = {};
+    tokens.forEach((token) => {
       if (!grouped[token.chain_id]) grouped[token.chain_id] = [];
       grouped[token.chain_id].push(token);
     });
     return grouped;
-  }, [tokens]);
+  };
+
+  const erc20TokensByChain = useMemo(() => groupTokensByChain(erc20Tokens), [erc20Tokens]);
+  const splTokensByChain = useMemo(() => groupTokensByChain(splTokens), [splTokens]);
 
   if (loading) {
     return <div className="page">Loading...</div>;
@@ -196,11 +231,10 @@ const WalletManagePage = () => {
       <div className="page-header">
         <div>
           <h1>Wallet Management</h1>
-          <p>Manage mnemonic roles and ERC20 token configurations</p>
+          <p>Manage mnemonic roles, ERC20 tokens, and SPL tokens</p>
         </div>
       </div>
 
-      {/* Roles Section */}
       <section className="card">
         <div className="page-header">
           <h2>Roles</h2>
@@ -234,7 +268,6 @@ const WalletManagePage = () => {
         </div>
       </section>
 
-      {/* ERC20 Tokens Section */}
       <section className="card">
         <div className="page-header">
           <h2>ERC20 Tokens</h2>
@@ -242,7 +275,7 @@ const WalletManagePage = () => {
             + Add Token
           </button>
         </div>
-        {Object.entries(tokensByChain).map(([chainId, chainTokens]) => {
+        {Object.entries(erc20TokensByChain).map(([chainId, chainTokens]) => {
           const chain = chains.find(c => c.id === chainId);
           return (
             <div key={chainId} style={{ marginBottom: '20px' }}>
@@ -260,7 +293,7 @@ const WalletManagePage = () => {
                       <button type="button" onClick={() => openTokenModal(token)}>
                         Edit
                       </button>
-                      <button type="button" className="danger" onClick={() => handleDeleteToken(token.id)}>
+                      <button type="button" className="danger" onClick={() => handleDeleteToken(token)}>
                         Delete
                       </button>
                     </div>
@@ -270,12 +303,60 @@ const WalletManagePage = () => {
             </div>
           );
         })}
-        {tokens.length === 0 && (
+        {erc20Tokens.length === 0 && (
           <p style={{ padding: '20px', color: '#888' }}>No ERC20 tokens configured yet.</p>
         )}
       </section>
 
-      {/* Add Role Modal */}
+      <section className="card">
+        <div className="page-header">
+          <h2>SPL Tokens</h2>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              resetTokenForm();
+              setEditingToken(null);
+              setTokenChainId(solanaChains[0]?.id ?? '');
+              setShowTokenModal(true);
+            }}
+          >
+            + Add Token
+          </button>
+        </div>
+        {Object.entries(splTokensByChain).map(([chainId, chainTokens]) => {
+          const chain = chains.find(c => c.id === chainId);
+          return (
+            <div key={chainId} style={{ marginBottom: '20px' }}>
+              <h4 style={{ marginBottom: '10px' }}>{chain?.name || chainId}</h4>
+              <div className="chain-list">
+                {chainTokens.map((token) => (
+                  <div key={token.id} className="chain-item">
+                    <div>
+                      <strong>{token.symbol}</strong>
+                      <div className="chain-meta">{token.name}</div>
+                      <div className="chain-meta">Mint: {token.mint}</div>
+                      <div className="chain-meta">Decimals: {token.decimals}</div>
+                    </div>
+                    <div className="chain-actions">
+                      <button type="button" onClick={() => openTokenModal(token)}>
+                        Edit
+                      </button>
+                      <button type="button" className="danger" onClick={() => handleDeleteToken(token)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {splTokens.length === 0 && (
+          <p style={{ padding: '20px', color: '#888' }}>No SPL tokens configured yet.</p>
+        )}
+      </section>
+
       {showRoleModal ? (
         <div className="modal-overlay">
           <div className="modal">
@@ -314,7 +395,6 @@ const WalletManagePage = () => {
         </div>
       ) : null}
 
-      {/* Add/Edit Token Modal */}
       {showTokenModal ? (
         <div className="modal-overlay">
           <div className="modal">
@@ -324,7 +404,7 @@ const WalletManagePage = () => {
                 Chain *
                 <select value={tokenChainId} onChange={(e) => setTokenChainId(e.target.value)}>
                   <option value="">Select a chain</option>
-                  {evmChains.map((chain) => (
+                  {chains.map((chain) => (
                     <option key={chain.id} value={chain.id}>
                       {chain.name}
                     </option>
@@ -348,11 +428,11 @@ const WalletManagePage = () => {
                 />
               </label>
               <label>
-                Contract Address *
+                {selectedChain?.type === 'SOLANA' ? 'Mint Address *' : 'Contract Address *'}
                 <input
                   value={tokenAddress}
                   onChange={(e) => setTokenAddress(e.target.value)}
-                  placeholder="0x..."
+                  placeholder={selectedChain?.type === 'SOLANA' ? 'Token mint address' : '0x...'}
                 />
               </label>
               <label>

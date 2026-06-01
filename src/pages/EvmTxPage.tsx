@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { apiUrl } from '../api';
 import { fetchJsonRpc } from '../data/rpc';
 import { formatNumber, fromHexToEth } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
@@ -14,14 +15,14 @@ const TRANSFER_EVENT_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4
 
 interface EvmTransaction {
   hash: string;
-  blockNumber: string;
+  blockNumber: string | null;
   from: string;
   to: string | null;
   value: string;
-  gas: string;
+  gas?: string | null;
   gasPrice: string;
-  nonce: string;
-  input: string;
+  nonce?: string | null;
+  input?: string | null;
 }
 
 interface EvmReceipt {
@@ -57,6 +58,18 @@ interface Erc20Transfer {
   valueFormatted: number;
 }
 
+interface IndexedEvmTx {
+  chain_id: string;
+  hash: string;
+  block_number: number;
+  from_addr: string;
+  to_addr: string | null;
+  value_wei: string;
+  gas_price: string;
+  gas_used: string | null;
+  status: number | null;
+}
+
 const EvmTxPage = () => {
   const { chainId, hash } = useParams();
   const { chains } = useConfigStore();
@@ -73,6 +86,7 @@ const EvmTxPage = () => {
   const [decodedTx, setDecodedTx] = useState<DecodedTransaction | null>(null);
   const [isDecoding, setIsDecoding] = useState(false);
   const [logsExpanded, setLogsExpanded] = useState(false);
+  const [txSource, setTxSource] = useState<'rpc' | 'indexer'>('rpc');
 
   // Helper to get tag for an address
   const getAddressTag = (address: string): Tag | undefined => {
@@ -121,33 +135,78 @@ const EvmTxPage = () => {
       if (!chain || !hash) {
         return;
       }
+
+      setTx(null);
+      setReceipt(null);
+      setDecodedTx(null);
+      setErc20Transfers([]);
+      setError('');
+
       try {
-        // Fetch transaction and receipt
-        const result = await fetchJsonRpc<EvmTransaction>(chain.rpcUrl, 'eth_getTransactionByHash', [
+        const rpcTx = await fetchJsonRpc<EvmTransaction | null>(chain.rpcUrl, 'eth_getTransactionByHash', [
           hash
         ]);
-        const receiptResult = await fetchJsonRpc<EvmReceipt>(
-          chain.rpcUrl,
-          'eth_getTransactionReceipt',
-          [hash]
-        );
-        setTx(result);
-        setReceipt(receiptResult);
 
-        // Fetch all tags
-        const tagsResponse = await fetch('/api/tags');
-        if (tagsResponse.ok) {
-          const allTags = await tagsResponse.json() as Tag[];
-          setTags(allTags);
+        let resolvedTx: EvmTransaction | null = rpcTx;
+        let receiptResult: EvmReceipt | null = null;
+        let source: 'rpc' | 'indexer' = 'rpc';
+
+        if (rpcTx) {
+          receiptResult = await fetchJsonRpc<EvmReceipt | null>(
+            chain.rpcUrl,
+            'eth_getTransactionReceipt',
+            [hash]
+          );
+        } else {
+          const indexedTxResponse = await fetch(apiUrl(`/chain/${chain.id}/evm/tx/${hash}`));
+          if (indexedTxResponse.ok) {
+            const indexedTx = await indexedTxResponse.json() as IndexedEvmTx;
+            resolvedTx = {
+              hash: indexedTx.hash,
+              blockNumber: `0x${indexedTx.block_number.toString(16)}`,
+              from: indexedTx.from_addr,
+              to: indexedTx.to_addr,
+              value: indexedTx.value_wei,
+              gas: null,
+              gasPrice: indexedTx.gas_price,
+              nonce: null,
+              input: null
+            };
+            receiptResult = indexedTx.status === null && !indexedTx.gas_used
+              ? null
+              : {
+                  status: indexedTx.status === null ? '0x0' : `0x${indexedTx.status.toString(16)}`,
+                  gasUsed: indexedTx.gas_used ?? '0x0',
+                  logs: []
+                };
+            source = 'indexer';
+          }
         }
 
-        // Fetch ERC20 tokens for this chain
-        const tokensResponse = await fetch(`/api/erc20-tokens?chainId=${chain.id}`);
-        if (tokensResponse.ok) {
-          const tokens = await tokensResponse.json() as Erc20TokenConfig[];
+        if (!resolvedTx) {
+          throw new Error('Transaction not found on the current RPC or local indexer');
+        }
+
+        setTx(resolvedTx);
+        setReceipt(receiptResult);
+        setTxSource(source);
+
+        const [tagsResult, tokensResult] = await Promise.allSettled([
+          fetch(apiUrl('/tags')),
+          fetch(apiUrl(`/erc20-tokens?chainId=${chain.id}`))
+        ]);
+
+        if (tagsResult.status === 'fulfilled' && tagsResult.value.ok) {
+          const allTags = await tagsResult.value.json() as Tag[];
+          setTags(allTags);
+        } else {
+          setTags([]);
+        }
+
+        if (tokensResult.status === 'fulfilled' && tokensResult.value.ok) {
+          const tokens = await tokensResult.value.json() as Erc20TokenConfig[];
           setErc20Tokens(tokens);
 
-          // Parse ERC20 transfers from logs
           if (receiptResult?.logs) {
             const transfers: Erc20Transfer[] = [];
             for (const log of receiptResult.logs) {
@@ -157,10 +216,13 @@ const EvmTxPage = () => {
               }
             }
             setErc20Transfers(transfers);
+          } else {
+            setErc20Transfers([]);
           }
+        } else {
+          setErc20Tokens([]);
+          setErc20Transfers([]);
         }
-
-        setError('');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load transaction');
       }
@@ -183,7 +245,7 @@ const EvmTxPage = () => {
           chain?.id || '',
           hash || '',
           tx.to,
-          tx.input,
+          tx.input ?? '0x',
           receipt.logs,
           abiRegistry
         );
@@ -226,6 +288,9 @@ const EvmTxPage = () => {
 
   const rows = [
     { label: 'Hash', value: tx.hash, copy: tx.hash },
+    ...(txSource === 'indexer'
+      ? [{ label: 'Source', value: 'Local indexer summary (RPC record unavailable)' }]
+      : []),
     {
       label: 'Status',
       value: receipt?.status ? (receipt.status === '0x1' ? 'Success' : 'Failed') : 'Pending'
@@ -255,10 +320,10 @@ const EvmTxPage = () => {
       copy: tx.to ?? undefined
     },
     { label: 'Value', value: `${fromHexToEth(tx.value)} ${chain.nativeTokenSymbol || 'ETH'}` },
-    { label: 'Gas Limit', value: formatNumber(parseInt(tx.gas, 16)) },
+    { label: 'Gas Limit', value: tx.gas ? formatNumber(parseInt(tx.gas, 16)) : '-' },
     { label: 'Gas Price', value: formatNumber(parseInt(tx.gasPrice, 16)) },
     { label: 'Gas Used', value: receipt ? formatNumber(parseInt(receipt.gasUsed, 16)) : '-' },
-    { label: 'Nonce', value: parseInt(tx.nonce, 16) }
+    { label: 'Nonce', value: tx.nonce ? parseInt(tx.nonce, 16) : '-' }
   ];
 
   // Format ERC20 transfer value for display
@@ -345,7 +410,7 @@ const EvmTxPage = () => {
       )}
 
       {/* Decoded Contract Activity */}
-      {decodedTx && !isDecoding && (
+      {decodedTx && !isDecoding && txSource === 'rpc' && (
         <DecodedTxView decoded={decodedTx} chainId={chain.id} />
       )}
 

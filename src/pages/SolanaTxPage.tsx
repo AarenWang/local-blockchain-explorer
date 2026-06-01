@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { fetchJsonRpc } from '../data/rpc';
+import { apiUrl } from '../api';
 import { ChainConfig, useConfigStore } from '../state/configStore';
+import { truncateMiddle } from '../data/format';
 import KeyValueTable from '../components/KeyValueTable';
 import TagManager from '../components/TagManager';
 
@@ -21,6 +22,32 @@ interface SolanaTxResult {
   };
 }
 
+interface SplTransfer {
+  id: string;
+  mint_address: string;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  source_owner: string | null;
+  destination_owner: string | null;
+  source_token_account: string;
+  destination_token_account: string;
+  amount: string;
+  signature: string;
+  slot: number;
+}
+
+const formatTokenAmount = (amount: string, decimals = 0) => {
+  const raw = BigInt(amount);
+  if (decimals === 0) {
+    return raw.toString();
+  }
+
+  const divisor = 10n ** BigInt(decimals);
+  const whole = raw / divisor;
+  const fraction = (raw % divisor).toString().padStart(decimals, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+};
+
 const SolanaTxPage = () => {
   const { chainId, signature } = useParams();
   const { chains } = useConfigStore();
@@ -29,6 +56,7 @@ const SolanaTxPage = () => {
     [chains, chainId]
   );
   const [tx, setTx] = useState<SolanaTxResult | null>(null);
+  const [splTransfers, setSplTransfers] = useState<SplTransfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -80,6 +108,12 @@ const SolanaTxPage = () => {
           setError(lastError?.message || 'Transaction not found');
         } else {
           setTx(result);
+          const splResponse = await fetch(
+            apiUrl(`/chain/${chain.id}/solana/tx/${signature}/spl-transfers`)
+          );
+          if (splResponse.ok) {
+            setSplTransfers(await splResponse.json());
+          }
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to load transaction';
@@ -138,7 +172,7 @@ const SolanaTxPage = () => {
           <h1>Transaction</h1>
           <p>{chain.chainName}</p>
         </div>
-        <TagManager type="tx" target={signature} />
+        <TagManager type="tx" target={signature ?? ''} />
       </div>
 
       <section className="card">
@@ -151,6 +185,35 @@ const SolanaTxPage = () => {
           {JSON.stringify(tx.transaction?.message?.instructions ?? [], null, 2)}
         </pre>
       </section>
+
+      {splTransfers.length > 0 ? (
+        <section className="card">
+          <h2>SPL Transfers</h2>
+          <div className="list-table">
+            <div className="list-row list-row--header">
+              <span>Token</span>
+              <span>From</span>
+              <span>To</span>
+              <span>Amount</span>
+            </div>
+            {splTransfers.map((transfer) => (
+              <div key={transfer.id} className="list-row">
+                <span className="list-primary">
+                  {transfer.tokenSymbol || 'Unknown'}
+                  <span className="list-secondary">{truncateMiddle(transfer.mint_address)}</span>
+                </span>
+                <span className="mono list-secondary">
+                  {truncateMiddle(transfer.source_owner || transfer.source_token_account)}
+                </span>
+                <span className="mono list-secondary">
+                  {truncateMiddle(transfer.destination_owner || transfer.destination_token_account)}
+                </span>
+                <span className="mono">{formatTokenAmount(transfer.amount, transfer.tokenDecimals)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {tx.meta?.logMessages && tx.meta.logMessages.length > 0 ? (
         <section className="card">

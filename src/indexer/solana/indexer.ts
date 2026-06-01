@@ -10,9 +10,49 @@ interface SolanaBlockRpc {
   blockhash: string;
   previousBlockhash: string;
   transactions: Array<{
-    transaction: { signatures: string[] };
-    meta: { fee: number; err: unknown } | null;
+    transaction: {
+      signatures: string[];
+      message: {
+        accountKeys: Array<string | { pubkey: string }>;
+        instructions: SolanaInstruction[];
+      };
+    };
+    meta: {
+      fee: number;
+      err: unknown;
+      innerInstructions?: Array<{
+        index: number;
+        instructions: SolanaInstruction[];
+      }>;
+      preTokenBalances?: TokenBalanceEntry[];
+      postTokenBalances?: TokenBalanceEntry[];
+    } | null;
   }>;
+}
+
+interface SolanaInstruction {
+  program?: string;
+  programId?: string;
+  parsed?: {
+    type?: string;
+    info?: {
+      source?: string;
+      destination?: string;
+      authority?: string;
+      multisigAuthority?: string;
+      mint?: string;
+      amount?: string;
+      tokenAmount?: {
+        amount?: string;
+      };
+    };
+  };
+}
+
+interface TokenBalanceEntry {
+  accountIndex: number;
+  mint: string;
+  owner?: string;
 }
 
 export class SolanaIndexer {
@@ -69,6 +109,8 @@ export class SolanaIndexer {
       return;
     }
 
+    const firstAvailable = await this.getFirstAvailableBlock();
+
     let start = this.lastProcessed !== null
       ? this.lastProcessed + 1
       : this.backfillFromGenesis
@@ -77,20 +119,66 @@ export class SolanaIndexer {
     if (start < 0) {
       start = 0;
     }
+    if (start < firstAvailable) {
+      logInfo(
+        `Solana indexer adjusted start slot for ${this.chain.id}: ${start} -> ${firstAvailable}`
+      );
+      start = firstAvailable;
+      this.lastProcessed = firstAvailable - 1;
+    }
 
     for (let slot = start; slot <= latest; slot += 1) {
-      const block = await fetchJsonRpc<SolanaBlockRpc>(this.chain.rpcUrl, 'getBlock', [
-        slot,
-        { transactionDetails: 'full' }
-      ]);
+      let block: SolanaBlockRpc | null;
+      try {
+        block = await fetchJsonRpc<SolanaBlockRpc | null>(this.chain.rpcUrl, 'getBlock', [
+          slot,
+          {
+            transactionDetails: 'full',
+            encoding: 'jsonParsed',
+            maxSupportedTransactionVersion: 0,
+            rewards: false
+          }
+        ]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const cleanedUpTo = this.extractFirstAvailableBlock(message);
 
-      const txs: SolanaTxRecord[] = block.transactions.map((item) => ({
-        chainId: this.chain.id,
-        signature: item.transaction.signatures[0],
-        slot,
-        fee: item.meta?.fee ?? null,
-        status: item.meta?.err ? 0 : 1
-      }));
+        if (cleanedUpTo !== null) {
+          logInfo(
+            `Solana slot ${slot} is no longer available on ${this.chain.id}; advancing to ${cleanedUpTo}`
+          );
+          this.lastProcessed = cleanedUpTo - 1;
+          slot = cleanedUpTo - 1;
+          continue;
+        }
+
+        if (this.isSkippedSlotError(message)) {
+          this.lastProcessed = slot;
+          continue;
+        }
+
+        throw error;
+      }
+
+      if (!block) {
+        this.lastProcessed = slot;
+        continue;
+      }
+
+      const txs: SolanaTxRecord[] = [];
+
+      for (const item of block.transactions) {
+        const signature = item.transaction.signatures[0];
+        txs.push({
+          chainId: this.chain.id,
+          signature,
+          slot,
+          fee: item.meta?.fee ?? null,
+          status: item.meta?.err ? 0 : 1
+        });
+
+        this.processSplTransfers(slot, signature, item);
+      }
 
       const slotRecord: SolanaSlotRecord = {
         chainId: this.chain.id,
@@ -112,5 +200,133 @@ export class SolanaIndexer {
 
       this.lastProcessed = slot;
     }
+  }
+
+  private async getFirstAvailableBlock(): Promise<number> {
+    try {
+      return await fetchJsonRpc<number>(this.chain.rpcUrl, 'getFirstAvailableBlock');
+    } catch {
+      try {
+        return await fetchJsonRpc<number>(this.chain.rpcUrl, 'minimumLedgerSlot');
+      } catch {
+        return 0;
+      }
+    }
+  }
+
+  private extractFirstAvailableBlock(message: string): number | null {
+    const match = message.match(/First available block:\s*(\d+)/i);
+    if (!match) {
+      return null;
+    }
+
+    const value = Number(match[1]);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  private isSkippedSlotError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('was skipped') || normalized.includes('skipped, or missing');
+  }
+
+  private processSplTransfers(
+    slot: number,
+    signature: string,
+    item: SolanaBlockRpc['transactions'][number]
+  ) {
+    const tokenAccounts = this.buildTokenAccountIndex(item);
+    const topLevelInstructions = item.transaction.message.instructions ?? [];
+
+    topLevelInstructions.forEach((instruction, instructionIndex) => {
+      this.persistSplTransfer(slot, signature, instruction, instructionIndex, 0, tokenAccounts);
+    });
+
+    for (const group of item.meta?.innerInstructions ?? []) {
+      group.instructions.forEach((instruction, innerIndex) => {
+        this.persistSplTransfer(
+          slot,
+          signature,
+          instruction,
+          group.index,
+          innerIndex + 1,
+          tokenAccounts
+        );
+      });
+    }
+  }
+
+  private buildTokenAccountIndex(item: SolanaBlockRpc['transactions'][number]) {
+    const accountKeys = item.transaction.message.accountKeys ?? [];
+    const tokenAccounts = new Map<string, { mint?: string; owner?: string }>();
+    const balances = [
+      ...(item.meta?.preTokenBalances ?? []),
+      ...(item.meta?.postTokenBalances ?? [])
+    ];
+
+    for (const balance of balances) {
+      const keyEntry = accountKeys[balance.accountIndex];
+      const pubkey = typeof keyEntry === 'string' ? keyEntry : keyEntry?.pubkey;
+      if (!pubkey) {
+        continue;
+      }
+
+      const existing = tokenAccounts.get(pubkey) ?? {};
+      if (balance.mint) {
+        existing.mint = balance.mint;
+      }
+      if (balance.owner) {
+        existing.owner = balance.owner;
+      }
+      tokenAccounts.set(pubkey, existing);
+    }
+
+    return tokenAccounts;
+  }
+
+  private persistSplTransfer(
+    slot: number,
+    signature: string,
+    instruction: SolanaInstruction,
+    instructionIndex: number,
+    innerIndex: number,
+    tokenAccounts: Map<string, { mint?: string; owner?: string }>
+  ) {
+    const parsed = instruction.parsed;
+    if (!parsed || (parsed.type !== 'transfer' && parsed.type !== 'transferChecked')) {
+      return;
+    }
+
+    const info = parsed.info;
+    const sourceTokenAccount = info?.source;
+    const destinationTokenAccount = info?.destination;
+    const amount = info?.tokenAmount?.amount ?? info?.amount;
+
+    if (!sourceTokenAccount || !destinationTokenAccount || !amount) {
+      return;
+    }
+
+    const sourceInfo = tokenAccounts.get(sourceTokenAccount);
+    const destinationInfo = tokenAccounts.get(destinationTokenAccount);
+    const mintAddress = info?.mint ?? sourceInfo?.mint ?? destinationInfo?.mint;
+
+    if (!mintAddress) {
+      return;
+    }
+
+    this.store.upsertSplTransfer({
+      id: `spl_transfer_${this.chain.id}_${signature}_${instructionIndex}_${innerIndex}`,
+      chainId: this.chain.id,
+      mintAddress,
+      sourceOwner: sourceInfo?.owner ?? null,
+      destinationOwner: destinationInfo?.owner ?? null,
+      sourceTokenAccount,
+      destinationTokenAccount,
+      authority: info?.authority ?? info?.multisigAuthority ?? null,
+      amount,
+      signature,
+      slot,
+      instructionIndex,
+      innerIndex
+    });
   }
 }

@@ -10,6 +10,7 @@ export interface Erc20TokenInfo {
 
 export interface SplTokenInfo {
   mint: string;
+  name?: string;
   symbol?: string;
   decimals?: number;
 }

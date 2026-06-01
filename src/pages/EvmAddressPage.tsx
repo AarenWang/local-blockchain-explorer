@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { apiUrl } from '../api';
 import { fetchJsonRpc } from '../data/rpc';
 import { fromHexToEth, truncateMiddle } from '../data/format';
 import { ChainConfig, useConfigStore } from '../state/configStore';
@@ -87,9 +88,8 @@ const EvmAddressPage = () => {
           address,
           'latest'
         ]);
-        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
         const txResponse = await fetch(
-          `${apiBase}/chain/${chain.id}/evm/address/${address}/txs?limit=20`
+          apiUrl(`/chain/${chain.id}/evm/address/${address}/txs?limit=20`)
         );
         if (!txResponse.ok) {
           throw new Error('Indexer API unavailable');
@@ -129,12 +129,10 @@ const EvmAddressPage = () => {
 
     setLoadingErc20(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-
       // First, ensure tokens are in database
       for (const token of chain.erc20Tokens || []) {
         if (token.symbol && token.decimals !== undefined) {
-          await fetch(`${apiBase}/erc20-tokens`, {
+          await fetch(apiUrl('/erc20-tokens'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -152,7 +150,7 @@ const EvmAddressPage = () => {
 
       // Fetch balances
       const response = await fetch(
-        `${apiBase}/chain/${chain.id}/evm/address/${address}/erc20-balances`
+        apiUrl(`/chain/${chain.id}/evm/address/${address}/erc20-balances`)
       );
       if (response.ok) {
         const balances = await response.json();
@@ -170,10 +168,8 @@ const EvmAddressPage = () => {
 
     setLoadingTransfers(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-
       const response = await fetch(
-        `${apiBase}/chain/${chain.id}/evm/address/${address}/erc20-transfers?limit=50`
+        apiUrl(`/chain/${chain.id}/evm/address/${address}/erc20-transfers?limit=50`)
       );
       if (response.ok) {
         const transfers = await response.json();

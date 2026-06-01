@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { apiUrl } from '../api';
 import { formatDateTime, truncateMiddle } from '../data/format';
 import { ChainConfig } from '../state/configStore';
 
@@ -20,6 +21,19 @@ interface SolanaSignatureSummary {
 
 const PAGE_SIZE = 50;
 
+const mergeUniqueBy = <T,>(current: T[], incoming: T[], getKey: (item: T) => string | number) => {
+  const merged = new Map<string | number, T>();
+
+  for (const item of current) {
+    merged.set(getKey(item), item);
+  }
+  for (const item of incoming) {
+    merged.set(getKey(item), item);
+  }
+
+  return Array.from(merged.values());
+};
+
 const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
   const [status, setStatus] = useState('Loading...');
   const [latency, setLatency] = useState<number | null>(null);
@@ -35,11 +49,10 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const loadPage = useCallback(async (page: number, type: 'slots' | 'txs') => {
-    const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
     const offset = page * PAGE_SIZE;
     const url = type === 'slots'
-      ? `${apiBase}/chain/${chain.id}/solana/slots?limit=${PAGE_SIZE}&offset=${offset}`
-      : `${apiBase}/chain/${chain.id}/solana/txs?limit=${PAGE_SIZE}&offset=${offset}`;
+      ? apiUrl(`/chain/${chain.id}/solana/slots?limit=${PAGE_SIZE}&offset=${offset}`)
+      : apiUrl(`/chain/${chain.id}/solana/txs?limit=${PAGE_SIZE}&offset=${offset}`);
 
     const response = await fetch(url);
     if (!response.ok) {
@@ -56,13 +69,17 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
       if (type === 'slots') {
         const nextPage = slotsPage + 1;
         const newSlots = await loadPage(nextPage, 'slots');
-        setSlots(prev => [...prev, ...newSlots as SolanaSlotSummary[]]);
+        setSlots((prev) =>
+          mergeUniqueBy(prev, newSlots as SolanaSlotSummary[], (item) => item.slot)
+        );
         setSlotsPage(nextPage);
         setSlotsHasMore(newSlots.length === PAGE_SIZE);
       } else {
         const nextPage = txsPage + 1;
         const newTxs = await loadPage(nextPage, 'txs');
-        setRecentSignatures(prev => [...prev, ...newTxs as SolanaSignatureSummary[]]);
+        setRecentSignatures((prev) =>
+          mergeUniqueBy(prev, newTxs as SolanaSignatureSummary[], (item) => item.signature)
+        );
         setTxsPage(nextPage);
         setTxsHasMore(newTxs.length === PAGE_SIZE);
       }
@@ -78,11 +95,10 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
 
     const load = async () => {
       try {
-        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
         const start = performance.now();
         const [slotsResponse, txsResponse] = await Promise.all([
-          fetch(`${apiBase}/chain/${chain.id}/solana/slots?limit=${PAGE_SIZE}`),
-          fetch(`${apiBase}/chain/${chain.id}/solana/txs?limit=${PAGE_SIZE}`)
+          fetch(apiUrl(`/chain/${chain.id}/solana/slots?limit=${PAGE_SIZE}`)),
+          fetch(apiUrl(`/chain/${chain.id}/solana/txs?limit=${PAGE_SIZE}`))
         ]);
         if (!slotsResponse.ok || !txsResponse.ok) {
           throw new Error('Indexer API unavailable');
@@ -98,8 +114,10 @@ const SolanaHomePage = ({ chain }: SolanaHomePageProps) => {
         setLatestSlot(slotsData[0]?.slot ?? null);
         setLatency(Math.round(end - start));
         setStatus('Connected');
-        setSlots(slotsData);
-        setRecentSignatures(txsData);
+        setSlots(mergeUniqueBy([], slotsData, (item) => item.slot));
+        setRecentSignatures(mergeUniqueBy([], txsData, (item) => item.signature));
+        setSlotsPage(0);
+        setTxsPage(0);
         setSlotsHasMore(slotsData.length === PAGE_SIZE);
         setTxsHasMore(txsData.length === PAGE_SIZE);
         setEpoch(null);

@@ -84,16 +84,34 @@ export interface Erc20TokenConfig {
   created_at: number;
 }
 
+export interface SplTokenConfig {
+  id: string;
+  chain_id: string;
+  symbol: string;
+  name: string;
+  mint: string;
+  decimals: number;
+  created_at: number;
+}
+
 export interface WalletBalance {
   address: string;
   index: number;
   nativeBalance: string;
   nativeBalanceFormatted: number;
   erc20Balances: Erc20Balance[];
+  splBalances: SplBalance[];
 }
 
 export interface Erc20Balance {
   tokenAddress: string;
+  symbol: string;
+  balance: string;
+  balanceFormatted: number;
+}
+
+export interface SplBalance {
+  mintAddress: string;
   symbol: string;
   balance: string;
   balanceFormatted: number;

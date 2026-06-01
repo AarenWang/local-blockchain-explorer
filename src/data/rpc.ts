@@ -1,6 +1,9 @@
-export interface JsonRpcResponse<T> {
+interface JsonRpcResponse<T> {
   result?: T;
-  error?: { code: number; message: string };
+  error?: {
+    code: number;
+    message: string;
+  };
 }
 
 export const fetchJsonRpc = async <T>(url: string, method: string, params: unknown[] = []) => {
@@ -25,19 +28,18 @@ export const fetchJsonRpc = async <T>(url: string, method: string, params: unkno
   if (data.error) {
     throw new Error(data.error.message);
   }
-  // Allow null as a valid result (e.g., Solana getTransaction can return null)
-  if ('result' in data && data.result === undefined) {
+  if (data.result === undefined) {
     throw new Error('RPC response missing result');
   }
-  return data.result as T;
+
+  return data.result;
 };
 
 export const measureRpc = async <T>(request: () => Promise<T>) => {
-  const start = performance.now();
+  const startedAt = performance.now();
   const result = await request();
-  const end = performance.now();
   return {
     result,
-    latencyMs: Math.round(end - start)
+    latencyMs: Math.round(performance.now() - startedAt)
   };
 };

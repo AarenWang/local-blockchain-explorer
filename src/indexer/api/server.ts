@@ -1,7 +1,7 @@
 import express from 'express';
 import { RedisCache } from '../cache/redis';
 import { SqliteStore } from '../storage/sqlite';
-import { ChainConfig, RoleRecord, Erc20TokenConfig } from '../types';
+import { ChainConfig, RoleRecord, Erc20TokenConfig, SplTokenConfig } from '../types';
 import { WalletService } from '../wallet/walletService';
 import { AbiRegistry } from '../abi/registry';
 import { Mnemonic } from 'ethers';
@@ -31,6 +31,14 @@ export const createApiServer = (
     if (_req.method === 'OPTIONS') {
       res.status(204).end();
       return;
+    }
+    next();
+  });
+
+  // Accept both `/foo` and `/api/foo` while the frontend standardizes on `/api`.
+  app.use((req, _res, next) => {
+    if (req.url === '/api' || req.url.startsWith('/api/')) {
+      req.url = req.url.slice(4) || '/';
     }
     next();
   });
@@ -85,6 +93,15 @@ export const createApiServer = (
       return;
     }
     res.json(store.getRecentEvmTxs(chainId, limit, offset));
+  });
+
+  app.get('/chain/:id/evm/tx/:hash', (req, res) => {
+    const tx = store.getEvmTxByHash(req.params.id, req.params.hash);
+    if (!tx) {
+      res.status(404).json({ error: 'Transaction not found' });
+      return;
+    }
+    res.json(tx);
   });
 
   app.get('/chain/:id/evm/address/:address/txs', (req, res) => {
@@ -224,6 +241,101 @@ export const createApiServer = (
       return;
     }
     res.json(store.getRecentSolanaTxs(chainId, limit, offset));
+  });
+
+  app.get('/chain/:id/solana/spl/info', async (req, res) => {
+    try {
+      const chainId = req.params.id;
+      const mint = req.query.mint as string;
+
+      if (!mint) {
+        res.status(400).json({ error: 'Mint address is required' });
+        return;
+      }
+
+      const chain = chains.find(c => c.id === chainId);
+      if (!chain) {
+        res.status(404).json({ error: 'Chain not found' });
+        return;
+      }
+
+      if (chain.type !== 'SOLANA') {
+        res.status(400).json({ error: 'Only Solana chains are supported' });
+        return;
+      }
+
+      const walletService = new WalletService(chain.rpcUrl);
+      const tokenInfo = await walletService.getSplTokenInfo(mint, chain.rpcUrl);
+      res.json(tokenInfo);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get('/chain/:id/solana/address/:address/spl-balances', async (req, res) => {
+    try {
+      const chainId = req.params.id;
+      const address = req.params.address;
+      const chain = chains.find(c => c.id === chainId);
+
+      if (!chain) {
+        res.status(404).json({ error: 'Chain not found' });
+        return;
+      }
+
+      if (chain.type !== 'SOLANA') {
+        res.status(400).json({ error: 'Only Solana chains are supported' });
+        return;
+      }
+
+      const walletService = new WalletService(chain.rpcUrl);
+      const splTokens = store.getSplTokens(chainId);
+      const balances = await walletService.getSplBalances(address, splTokens, chain.rpcUrl);
+      res.json(balances);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get('/chain/:id/solana/address/:address/spl-transfers', (req, res) => {
+    try {
+      const chainId = req.params.id;
+      const address = req.params.address;
+      const limit = Number(req.query.limit ?? 50);
+      const transfers = store.getSplTransfersForAddress(chainId, address, limit);
+      const tokens = store.getSplTokens(chainId);
+      const tokenMap = new Map(tokens.map(t => [t.mint, t]));
+
+      res.json(
+        transfers.map((transfer: any) => ({
+          ...transfer,
+          tokenSymbol: tokenMap.get(transfer.mint_address)?.symbol || 'Unknown',
+          tokenDecimals: tokenMap.get(transfer.mint_address)?.decimals ?? 0
+        }))
+      );
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get('/chain/:id/solana/tx/:signature/spl-transfers', (req, res) => {
+    try {
+      const chainId = req.params.id;
+      const signature = req.params.signature;
+      const transfers = store.getSplTransfersBySignature(chainId, signature);
+      const tokens = store.getSplTokens(chainId);
+      const tokenMap = new Map(tokens.map(t => [t.mint, t]));
+
+      res.json(
+        transfers.map((transfer: any) => ({
+          ...transfer,
+          tokenSymbol: tokenMap.get(transfer.mint_address)?.symbol || 'Unknown',
+          tokenDecimals: tokenMap.get(transfer.mint_address)?.decimals ?? 0
+        }))
+      );
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
   });
 
   // ===== Role Management Endpoints =====
@@ -388,6 +500,74 @@ export const createApiServer = (
     }
   });
 
+  // ===== SPL Token Management Endpoints =====
+
+  app.get('/spl-tokens', (req, res) => {
+    try {
+      const chainId = req.query.chainId as string;
+      const tokens = store.getSplTokens(chainId);
+      res.json(tokens);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post('/spl-tokens', (req, res) => {
+    try {
+      const { chainId, symbol, name, mint, decimals } = req.body;
+
+      if (!chainId || !symbol || !name || !mint || decimals === undefined) {
+        res.status(400).json({ error: 'All fields are required' });
+        return;
+      }
+
+      const existingTokens = store.getSplTokens(chainId);
+      const existing = existingTokens.find(t => t.mint === mint);
+
+      if (existing) {
+        res.json(existing);
+        return;
+      }
+
+      const id = `spl_token_${Date.now()}`;
+      const now = Math.floor(Date.now() / 1000);
+
+      const token: SplTokenConfig = {
+        id,
+        chain_id: chainId,
+        symbol,
+        name,
+        mint,
+        decimals,
+        created_at: now
+      };
+
+      store.createSplToken(token);
+      res.json(token);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.patch('/spl-tokens/:id', (req, res) => {
+    try {
+      const { symbol, name, mint, decimals } = req.body;
+      store.updateSplToken(req.params.id, { symbol, name, mint, decimals });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.delete('/spl-tokens/:id', (req, res) => {
+    try {
+      store.deleteSplToken(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ===== Wallet Balance Endpoints =====
 
   // Get balances for a role's derived wallets
@@ -409,29 +589,35 @@ export const createApiServer = (
         return;
       }
 
-      if (chain.type !== 'EVM') {
-        res.status(400).json({ error: 'Only EVM chains are supported' });
-        return;
-      }
-
       // Decrypt mnemonic
       const mnemonic = Buffer.from(role.mnemonicEncrypted, 'base64').toString('utf-8');
-
-      // Get ERC20 tokens for this chain
-      const allErc20Tokens = store.getErc20Tokens();
-      const erc20Tokens = allErc20Tokens.filter(t => t.chain_id === chainId);
-      console.log('[API] ERC20 tokens for chain', chainId, ':', erc20Tokens);
-
-      // Get wallet service and fetch balances
       const walletService = new WalletService(chain.rpcUrl);
-      const balances = await walletService.getWalletBalances(
-        mnemonic,
-        chainId,
-        chain.rpcUrl,
-        erc20Tokens,
-        count,
-        role.derivationPath
-      );
+
+      let balances;
+      if (chain.type === 'EVM') {
+        const erc20Tokens = store.getErc20Tokens(chainId);
+        balances = await walletService.getWalletBalances(
+          mnemonic,
+          chainId,
+          chain.rpcUrl,
+          erc20Tokens,
+          count,
+          role.derivationPath
+        );
+      } else if (chain.type === 'SOLANA') {
+        const splTokens = store.getSplTokens(chainId);
+        balances = await walletService.getSolanaWalletBalances(
+          mnemonic,
+          chainId,
+          chain.rpcUrl,
+          splTokens,
+          count,
+          role.derivationPath
+        );
+      } else {
+        res.status(400).json({ error: 'Unsupported chain type' });
+        return;
+      }
 
       res.json(balances);
     } catch (error) {
@@ -516,7 +702,7 @@ export const createApiServer = (
   // ===== Contract ABI Endpoints =====
 
   // Get ABI for a specific contract
-  app.get('/api/contract-abi/:chainId/:address', (req, res) => {
+  app.get('/contract-abi/:chainId/:address', (req, res) => {
     try {
       const { chainId, address } = req.params;
       const abi = abiRegistry.getAbi(chainId, address);
@@ -531,7 +717,7 @@ export const createApiServer = (
   });
 
   // List all registered ABIs
-  app.get('/api/contract-abis', (req, res) => {
+  app.get('/contract-abis', (req, res) => {
     try {
       const chainId = req.query.chainId as string | undefined;
       const abis = chainId

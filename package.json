@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx --max-warnings 0",
+    "indexer:dev": "tsx src/indexer/index.ts",
     "indexer": "tsx src/indexer/index.ts",
     "backfill-erc20": "tsx src/indexer/backfill-erc20.ts"
   },

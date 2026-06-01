@@ -5,7 +5,8 @@ import {
   SolanaSlotRecord,
   SolanaTxRecord,
   RoleRecord,
-  Erc20TokenConfig
+  Erc20TokenConfig,
+  SplTokenConfig
 } from '../types';
 
 export class SqliteStore {
@@ -110,6 +111,21 @@ export class SqliteStore {
       create index if not exists idx_erc20_tokens_chain
         on erc20_tokens(chain_id);
 
+      -- SPL token configurations
+      create table if not exists spl_tokens (
+        id text primary key,
+        chain_id text not null,
+        symbol text not null,
+        name text not null,
+        mint text not null,
+        decimals integer not null,
+        created_at integer default (strftime('%s','now')),
+        unique(chain_id, mint)
+      );
+
+      create index if not exists idx_spl_tokens_chain
+        on spl_tokens(chain_id);
+
       -- ERC20 transfer events
       create table if not exists erc20_transfers (
         id text primary key,
@@ -131,6 +147,36 @@ export class SqliteStore {
         on erc20_transfers(chain_id, to_address);
       create index if not exists idx_erc20_transfers_block
         on erc20_transfers(chain_id, block_number desc);
+
+      -- SPL transfer events
+      create table if not exists spl_transfers (
+        id text primary key,
+        chain_id text not null,
+        mint_address text not null,
+        source_owner text,
+        destination_owner text,
+        source_token_account text not null,
+        destination_token_account text not null,
+        authority text,
+        amount text not null,
+        signature text not null,
+        slot integer not null,
+        instruction_index integer not null,
+        inner_index integer not null default 0,
+        created_at integer default (strftime('%s','now')),
+        unique(chain_id, signature, instruction_index, inner_index)
+      );
+
+      create index if not exists idx_spl_transfers_source_owner
+        on spl_transfers(chain_id, source_owner);
+      create index if not exists idx_spl_transfers_destination_owner
+        on spl_transfers(chain_id, destination_owner);
+      create index if not exists idx_spl_transfers_source_token_account
+        on spl_transfers(chain_id, source_token_account);
+      create index if not exists idx_spl_transfers_destination_token_account
+        on spl_transfers(chain_id, destination_token_account);
+      create index if not exists idx_spl_transfers_slot
+        on spl_transfers(chain_id, slot desc);
 
       -- Tags for addresses and transactions
       create table if not exists tags (
@@ -275,6 +321,65 @@ export class SqliteStore {
     return stmt.run(id);
   }
 
+  // SPL token management methods
+  createSplToken(token: SplTokenConfig) {
+    const stmt = this.db.prepare(`
+      insert into spl_tokens (id, chain_id, symbol, name, mint, decimals, created_at)
+      values (@id, @chain_id, @symbol, @name, @mint, @decimals, @created_at)
+    `);
+    return stmt.run(token);
+  }
+
+  getSplTokens(chainId?: string): SplTokenConfig[] {
+    if (chainId) {
+      const stmt = this.db.prepare(`
+        select id, chain_id, symbol, name, mint, decimals, created_at as created_at
+        from spl_tokens where chain_id = ?
+      `);
+      return stmt.all(chainId) as SplTokenConfig[];
+    }
+    const stmt = this.db.prepare(`
+      select id, chain_id, symbol, name, mint, decimals, created_at as created_at
+      from spl_tokens order by chain_id, symbol
+    `);
+    return stmt.all() as SplTokenConfig[];
+  }
+
+  updateSplToken(id: string, updates: Partial<Omit<SplTokenConfig, 'id' | 'created_at'>>) {
+    const fields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.symbol !== undefined) {
+      fields.push('symbol = ?');
+      params.push(updates.symbol);
+    }
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      params.push(updates.name);
+    }
+    if (updates.mint !== undefined) {
+      fields.push('mint = ?');
+      params.push(updates.mint);
+    }
+    if (updates.decimals !== undefined) {
+      fields.push('decimals = ?');
+      params.push(updates.decimals);
+    }
+
+    if (fields.length === 0) return;
+
+    params.push(id);
+    const stmt = this.db.prepare(
+      `update spl_tokens set ${fields.join(', ')} where id = ?`
+    );
+    return stmt.run(...params);
+  }
+
+  deleteSplToken(id: string) {
+    const stmt = this.db.prepare('delete from spl_tokens where id = ?');
+    return stmt.run(id);
+  }
+
   // ERC20 Transfer records
   upsertErc20Transfer(transfer: {
     id: string;
@@ -321,6 +426,73 @@ export class SqliteStore {
       limit ?
     `);
     return stmt.all(chainId, limit);
+  }
+
+  // SPL Transfer records
+  upsertSplTransfer(transfer: {
+    id: string;
+    chainId: string;
+    mintAddress: string;
+    sourceOwner: string | null;
+    destinationOwner: string | null;
+    sourceTokenAccount: string;
+    destinationTokenAccount: string;
+    authority: string | null;
+    amount: string;
+    signature: string;
+    slot: number;
+    instructionIndex: number;
+    innerIndex: number;
+  }) {
+    const stmt = this.db.prepare(`
+      insert into spl_transfers
+        (
+          id, chain_id, mint_address, source_owner, destination_owner,
+          source_token_account, destination_token_account, authority, amount,
+          signature, slot, instruction_index, inner_index
+        )
+      values
+        (
+          @id, @chainId, @mintAddress, @sourceOwner, @destinationOwner,
+          @sourceTokenAccount, @destinationTokenAccount, @authority, @amount,
+          @signature, @slot, @instructionIndex, @innerIndex
+        )
+      on conflict(chain_id, signature, instruction_index, inner_index) do update set
+        mint_address=excluded.mint_address,
+        source_owner=excluded.source_owner,
+        destination_owner=excluded.destination_owner,
+        source_token_account=excluded.source_token_account,
+        destination_token_account=excluded.destination_token_account,
+        authority=excluded.authority,
+        amount=excluded.amount,
+        slot=excluded.slot
+    `);
+    return stmt.run(transfer);
+  }
+
+  getSplTransfersForAddress(chainId: string, address: string, limit: number = 50) {
+    const stmt = this.db.prepare(`
+      select * from spl_transfers
+      where chain_id = ?
+        and (
+          source_owner = ?
+          or destination_owner = ?
+          or source_token_account = ?
+          or destination_token_account = ?
+        )
+      order by slot desc, instruction_index desc, inner_index desc
+      limit ?
+    `);
+    return stmt.all(chainId, address, address, address, address, limit);
+  }
+
+  getSplTransfersBySignature(chainId: string, signature: string) {
+    const stmt = this.db.prepare(`
+      select * from spl_transfers
+      where chain_id = ? and signature = ?
+      order by instruction_index asc, inner_index asc
+    `);
+    return stmt.all(chainId, signature);
   }
 
   // Tag management methods
@@ -383,6 +555,7 @@ export class SqliteStore {
       // Clear Solana data
       this.db.prepare('delete from solana_slots where chain_id = ?').run(chainId);
       this.db.prepare('delete from solana_txs where chain_id = ?').run(chainId);
+      this.db.prepare('delete from spl_transfers where chain_id = ?').run(chainId);
     });
     tx();
   }
@@ -473,6 +646,13 @@ export class SqliteStore {
       'select * from evm_txs where chain_id = ? order by block_number desc limit ? offset ?'
     );
     return stmt.all(chainId, limit, offset) as EvmTxRecord[];
+  }
+
+  getEvmTxByHash(chainId: string, hash: string) {
+    const stmt = this.db.prepare(
+      'select * from evm_txs where chain_id = ? and hash = ? limit 1'
+    );
+    return stmt.get(chainId, hash) as EvmTxRecord | undefined;
   }
 
   getEvmAddressTxs(chainId: string, address: string, limit: number, offset: number = 0) {

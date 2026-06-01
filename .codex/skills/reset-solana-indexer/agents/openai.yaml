@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reset Solana Indexer"
+  short_description: "Clear Solana history and rebuild from RPC"
+  default_prompt: "Use $reset-solana-indexer to clear stale Solana indexer data, wipe Solana cache keys, and rescan the current RPC node."

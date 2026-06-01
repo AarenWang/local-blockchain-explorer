@@ -1,7 +1,14 @@
-import { HDNodeWallet, ethers, Mnemonic, Wordlist } from 'ethers';
-import { Provider, Wallet } from 'ethers';
-import { WalletBalance, Erc20Balance, Erc20TokenConfig } from '../types';
+import { HDNodeWallet, ethers, Mnemonic, Provider } from 'ethers';
 import * as crypto from 'crypto';
+import {
+  WalletBalance,
+  Erc20Balance,
+  Erc20TokenConfig,
+  SplBalance,
+  SplTokenConfig
+} from '../types';
+import { fetchJsonRpc } from '../clients/jsonRpc';
+import { deriveSolanaAddress } from '../solana/utils';
 
 // ERC20 BalanceOf ABI
 const ERC20_ABI = [
@@ -43,6 +50,23 @@ export class WalletService {
     return this.providers.get(chainRpcUrl)!;
   }
 
+  private computeMnemonicSeed(mnemonic: string): Buffer {
+    try {
+      const mnemonicObj = Mnemonic.fromPhrase(mnemonic);
+      return Buffer.from(mnemonicObj.computeSeed().slice(2), 'hex');
+    } catch {
+      const mnemonicBuffer = Buffer.from(mnemonic, 'utf8');
+      const saltBuffer = Buffer.from('mnemonic', 'utf8');
+      return crypto.pbkdf2Sync(
+        mnemonicBuffer,
+        saltBuffer,
+        2048,
+        64,
+        'sha512'
+      );
+    }
+  }
+
   /**
    * Derive a wallet from mnemonic at a specific index
    * Uses BIP-32/39/44 standard derivation path
@@ -52,29 +76,10 @@ export class WalletService {
     address: string;
     privateKey: string;
   } {
-    let seed: string;
-
-    // Try to create mnemonic normally (validates checksum)
-    try {
-      const mnemonicObj = Mnemonic.fromPhrase(mnemonic);
-      seed = mnemonicObj.computeSeed();
-    } catch {
-      // If mnemonic has invalid checksum, compute seed directly using PBKDF2
-      // BIP39: seed = PBKDF2(mnemonic + passphrase, "mnemonic" + passphrase, 2048, 64)
-      const mnemonicBuffer = Buffer.from(mnemonic, 'utf8');
-      const saltBuffer = Buffer.from('mnemonic', 'utf8');
-      const seedBuffer = crypto.pbkdf2Sync(
-        mnemonicBuffer,
-        saltBuffer,
-        2048,
-        64,
-        'sha512'
-      );
-      seed = '0x' + seedBuffer.toString('hex');
-    }
+    const seed = this.computeMnemonicSeed(mnemonic);
 
     // Create root HD node from seed
-    const rootNode = HDNodeWallet.fromSeed(seed);
+    const rootNode = HDNodeWallet.fromSeed(`0x${seed.toString('hex')}`);
 
     // Derive path (remove leading 'm/' as rootNode is already at root)
     const relativePath = derivationPath.replace(/^m\//, '');
@@ -97,6 +102,50 @@ export class WalletService {
     const result = [];
     for (let i = 0; i < count; i++) {
       const wallet = this.deriveWallet(mnemonic, i, derivationPath);
+      result.push({
+        index: i,
+        address: wallet.address,
+        privateKey: wallet.privateKey
+      });
+    }
+    return result;
+  }
+
+  deriveSolanaWallet(
+    mnemonic: string,
+    index: number,
+    derivationPath: string = "m/44'/501'"
+  ): {
+    address: string;
+    privateKey: string;
+  } {
+    const seed = this.computeMnemonicSeed(mnemonic);
+    const normalizedPath = derivationPath === 'm'
+      ? derivationPath
+      : derivationPath.replace(/\/+$/, '');
+    const fullPath = normalizedPath.endsWith("'")
+      ? `${normalizedPath}/${index}'`
+      : `${normalizedPath}/${index}'`;
+
+    const derived = deriveSolanaAddress(seed, fullPath);
+    return {
+      address: derived.address,
+      privateKey: derived.secretKey
+    };
+  }
+
+  deriveSolanaWallets(
+    mnemonic: string,
+    count: number = 10,
+    derivationPath: string = "m/44'/501'"
+  ): Array<{
+    index: number;
+    address: string;
+    privateKey: string;
+  }> {
+    const result = [];
+    for (let i = 0; i < count; i += 1) {
+      const wallet = this.deriveSolanaWallet(mnemonic, i, derivationPath);
       result.push({
         index: i,
         address: wallet.address,
@@ -194,7 +243,189 @@ export class WalletService {
         index: wallet.index,
         nativeBalance: nativeBalance.balance,
         nativeBalanceFormatted: nativeBalance.balanceFormatted,
-        erc20Balances
+        erc20Balances,
+        splBalances: []
+      });
+    }
+
+    return result;
+  }
+
+  async getSplTokenInfo(mintAddress: string, rpcUrl: string): Promise<{
+    mint: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+  }> {
+    const result = await fetchJsonRpc<{
+      value: {
+        data?: {
+          parsed?: {
+            info?: {
+              decimals?: number;
+            };
+          };
+        };
+      } | null;
+    }>(rpcUrl, 'getAccountInfo', [mintAddress, { encoding: 'jsonParsed' }]);
+
+    const decimals = result.value?.data?.parsed?.info?.decimals ?? 0;
+    let name = '';
+    let symbol = '';
+
+    try {
+      const metadataAccounts = await fetchJsonRpc<Array<{
+        account?: {
+          data?: [string, string];
+        };
+      }>>(rpcUrl, 'getProgramAccounts', [
+        'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s',
+        {
+          encoding: 'base64',
+          filters: [
+            {
+              memcmp: {
+                offset: 33,
+                bytes: mintAddress
+              }
+            }
+          ]
+        }
+      ]);
+
+      const metadataPayload = metadataAccounts[0]?.account?.data?.[0];
+      if (metadataPayload) {
+        const buffer = Buffer.from(metadataPayload, 'base64');
+        let offset = 65;
+        const readString = () => {
+          if (offset + 4 > buffer.length) return '';
+          const length = buffer.readUInt32LE(offset);
+          offset += 4;
+          if (offset + length > buffer.length) return '';
+          const value = buffer.subarray(offset, offset + length).toString('utf8').replace(/\0+$/g, '').trim();
+          offset += length;
+          return value;
+        };
+
+        name = readString();
+        symbol = readString();
+      }
+    } catch {
+      // Metadata is optional; fall back to mint prefix when absent.
+    }
+
+    return {
+      mint: mintAddress,
+      name: name || symbol || mintAddress.slice(0, 8),
+      symbol: symbol || name || mintAddress.slice(0, 8),
+      decimals
+    };
+  }
+
+  async getSolanaNativeBalance(address: string, rpcUrl: string): Promise<{
+    balance: string;
+    balanceFormatted: number;
+  }> {
+    const result = await fetchJsonRpc<{ value: number }>(rpcUrl, 'getBalance', [address]);
+    return {
+      balance: String(result.value),
+      balanceFormatted: result.value / 1e9
+    };
+  }
+
+  async getSplBalances(
+    address: string,
+    trackedTokens: SplTokenConfig[],
+    rpcUrl: string
+  ): Promise<SplBalance[]> {
+    const result = await fetchJsonRpc<{
+      value: Array<{
+        pubkey: string;
+        account: {
+          data?: {
+            parsed?: {
+              info?: {
+                mint?: string;
+                tokenAmount?: {
+                  amount?: string;
+                  decimals?: number;
+                };
+              };
+            };
+          };
+        };
+      }>;
+    }>(rpcUrl, 'getTokenAccountsByOwner', [
+      address,
+      { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },
+      { encoding: 'jsonParsed' }
+    ]);
+
+    const trackedByMint = new Map(
+      trackedTokens.map((token) => [token.mint, token])
+    );
+    const aggregated = new Map<string, { amount: bigint; decimals: number }>();
+
+    for (const item of result.value) {
+      const info = item.account?.data?.parsed?.info;
+      const mint = info?.mint;
+      const amount = info?.tokenAmount?.amount;
+      const decimals = info?.tokenAmount?.decimals ?? trackedByMint.get(mint ?? '')?.decimals ?? 0;
+
+      if (!mint || amount === undefined) {
+        continue;
+      }
+      if (trackedByMint.size > 0 && !trackedByMint.has(mint)) {
+        continue;
+      }
+
+      const current = aggregated.get(mint) ?? { amount: 0n, decimals };
+      current.amount += BigInt(amount);
+      current.decimals = decimals;
+      aggregated.set(mint, current);
+    }
+
+    const balances: SplBalance[] = [];
+    for (const [mint, value] of aggregated.entries()) {
+      const token = trackedByMint.get(mint);
+      const balanceFormatted = Number(value.amount) / (10 ** value.decimals);
+      if (balanceFormatted <= 0) {
+        continue;
+      }
+      balances.push({
+        mintAddress: token?.mint ?? mint,
+        symbol: token?.symbol ?? mint.slice(0, 8),
+        balance: value.amount.toString(),
+        balanceFormatted
+      });
+    }
+
+    return balances;
+  }
+
+  async getSolanaWalletBalances(
+    mnemonic: string,
+    chainId: string,
+    chainRpcUrl: string,
+    splTokens: SplTokenConfig[],
+    count: number = 10,
+    derivationPath: string = "m/44'/501'"
+  ): Promise<WalletBalance[]> {
+    const wallets = this.deriveSolanaWallets(mnemonic, count, derivationPath);
+    const chainTokens = splTokens.filter((token) => token.chain_id === chainId);
+    const result: WalletBalance[] = [];
+
+    for (const wallet of wallets) {
+      const nativeBalance = await this.getSolanaNativeBalance(wallet.address, chainRpcUrl);
+      const splBalances = await this.getSplBalances(wallet.address, chainTokens, chainRpcUrl);
+
+      result.push({
+        address: wallet.address,
+        index: wallet.index,
+        nativeBalance: nativeBalance.balance,
+        nativeBalanceFormatted: nativeBalance.balanceFormatted,
+        erc20Balances: [],
+        splBalances
       });
     }
 

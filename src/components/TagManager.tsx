@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 
 interface Tag {
   id: string;
@@ -39,8 +40,7 @@ const TagManager = ({ type, target }: TagManagerProps) => {
 
   const loadTag = async () => {
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-      const response = await fetch(`${apiBase}/tags/${type}/${target}`);
+      const response = await fetch(apiUrl(`/tags/${type}/${target}`));
       if (response.ok) {
         const data = await response.json();
         setTag(data);
@@ -65,8 +65,7 @@ const TagManager = ({ type, target }: TagManagerProps) => {
   const handleSave = async () => {
     setLoading(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-      const response = await fetch(`${apiBase}/tags`, {
+      const response = await fetch(apiUrl('/tags'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, target, label, note, color })
@@ -89,8 +88,7 @@ const TagManager = ({ type, target }: TagManagerProps) => {
 
     setLoading(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-      await fetch(`${apiBase}/tags/${type}/${target}`, {
+      await fetch(apiUrl(`/tags/${type}/${target}`), {
         method: 'DELETE'
       });
       setTag(null);

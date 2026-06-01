@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { apiUrl } from '../api';
 import { formatDateTime, formatNumber, truncateMiddle } from '../data/format';
 import { ChainConfig } from '../state/configStore';
 
@@ -36,11 +37,10 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const loadPage = useCallback(async (page: number, type: 'blocks' | 'txs') => {
-    const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
     const offset = page * PAGE_SIZE;
     const url = type === 'blocks'
-      ? `${apiBase}/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}&offset=${offset}`
-      : `${apiBase}/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}&offset=${offset}`;
+      ? apiUrl(`/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}&offset=${offset}`)
+      : apiUrl(`/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}&offset=${offset}`);
 
     const response = await fetch(url);
     if (!response.ok) {
@@ -79,11 +79,10 @@ const EvmHomePage = ({ chain }: EvmHomePageProps) => {
 
     const load = async () => {
       try {
-        const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
         const start = performance.now();
         const [blocksResponse, txsResponse] = await Promise.all([
-          fetch(`${apiBase}/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}`),
-          fetch(`${apiBase}/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}`)
+          fetch(apiUrl(`/chain/${chain.id}/evm/blocks?limit=${PAGE_SIZE}`)),
+          fetch(apiUrl(`/chain/${chain.id}/evm/txs?limit=${PAGE_SIZE}`))
         ]);
         if (!blocksResponse.ok || !txsResponse.ok) {
           throw new Error('Indexer API unavailable');

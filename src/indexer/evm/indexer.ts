@@ -47,6 +47,7 @@ function formatNativeValue(valueWei: string | null): string {
     if (ethValue < 0.0001 && ethValue > 0) return '<0.0001';
     if (ethValue >= 1_000_000) return `${(ethValue / 1e18).toLocaleString(undefined, { maximumFractionDigits: 6 })}M`;
     if (ethValue >= 1_000) return ethValue.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return ethValue.toLocaleString(undefined, { maximumFractionDigits: 6 });
   } catch {
     return valueWei;
   }
@@ -158,7 +159,7 @@ export class EvmIndexer {
             from: tx.from,
             to: tx.to,
             valueWei: tx.value,
-            value: tx.value && tx.value !== '0x' ? this.formatNativeValue(tx.value) : null,
+            value: tx.value && tx.value !== '0x' ? this.formatNativeValue(tx.value) : undefined,
             gasPrice: tx.gasPrice,
             gasUsed: receipt?.gasUsed ?? null,
             status: receipt?.status ? parseInt(receipt.status, 16) : null

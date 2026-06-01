@@ -106,7 +106,7 @@ const SolanaSlotPage = () => {
 
   // When using transactionDetails: 'signatures', Solana returns a flat signatures array
   const signatures = block.signatures || [];
-  const rows = [
+  const rows: Array<{ label: string; value: string | number | React.ReactNode; copy?: string }> = [
     { label: 'Slot', value: slot ?? '-' },
     { label: 'Block Time', value: block.blockTime ? formatDateTime(block.blockTime) : '-' },
     { label: 'Blockhash', value: block.blockhash ?? '-', copy: block.blockhash ?? undefined },

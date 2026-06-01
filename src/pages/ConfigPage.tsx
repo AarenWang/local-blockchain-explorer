@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { apiUrl } from '../api';
 import { ChainConfig, ChainType, Erc20TokenInfo, SplTokenInfo, useConfigStore } from '../state/configStore';
 import { fetchJsonRpc, measureRpc } from '../data/rpc';
 import { truncateMiddle } from '../data/format';
@@ -36,7 +37,25 @@ interface Tag {
   color: string;
 }
 
+interface PublicSplTokenInfo {
+  address?: string;
+  chainId?: number | string;
+  symbol?: string;
+  name?: string;
+  decimals?: number;
+}
+
 const ConfigPage = () => {
+  const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit, timeoutMs = 15000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(id);
+    }
+  };
+
   const { chains, addChain, updateChain, deleteChain, setActiveChain, activeChain } = useConfigStore();
   const [draft, setDraft] = useState<ChainConfig | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -182,13 +201,14 @@ const ConfigPage = () => {
           ...(draft.splTokens || []),
           {
             mint: tokenInfo.mint,
+            name: tokenInfo.name,
             symbol: tokenInfo.symbol,
             decimals: tokenInfo.decimals
           }
         ]
       });
       setNewTokenAddress('');
-      setStatus(`Added ${tokenInfo.symbol} token`);
+      setStatus(`Added ${tokenInfo.symbol || tokenInfo.name || tokenInfo.mint.slice(0, 8)} token`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to fetch token info');
     } finally {
@@ -250,57 +270,129 @@ const ConfigPage = () => {
   };
 
   const fetchSplTokenInfoFromRpc = async (mintAddress: string, rpcUrl: string) => {
-    // First, try to get token info from Jupiter token list
-    let symbol = mintAddress.slice(0, 8); // Default fallback
-    let decimals = 0;
+    const mintResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getAccountInfo',
+        params: [
+          mintAddress,
+          { encoding: 'jsonParsed' }
+        ]
+      })
+    });
+
+    const mintData = await mintResponse.json();
+    const decimals = mintData.result?.value?.data?.parsed?.info?.decimals || 0;
+
+    let name = '';
+    let symbol = '';
 
     try {
-      // Try Jupiter token list API
-      const tokenListResponse = await fetch('https://token.jup.ag/all');
-      if (tokenListResponse.ok) {
-        const tokenList = await tokenListResponse.json();
-        const tokenInfo = tokenList.find((t: any) =>
-          t.address.toLowerCase() === mintAddress.toLowerCase() ||
-          t.address === mintAddress
-        );
-        if (tokenInfo) {
-          symbol = tokenInfo.symbol;
-          decimals = tokenInfo.decimals;
-        }
-      }
-    } catch (err) {
-      console.log('Failed to fetch from token list, using RPC');
-    }
-
-    // If not found in token list, fetch from RPC to get decimals
-    if (decimals === 0) {
-      const response = await fetch(rpcUrl, {
+      const metadataResponse = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: 1,
-          method: 'getAccountInfo',
+          id: 2,
+          method: 'getProgramAccounts',
           params: [
-            mintAddress,
-            { encoding: 'jsonParsed' }
+            'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s',
+            {
+              encoding: 'base64',
+              filters: [
+                {
+                  memcmp: {
+                    offset: 33,
+                    bytes: mintAddress
+                  }
+                }
+              ]
+            }
           ]
         })
       });
 
-      const data = await response.json();
+      const metadataData = await metadataResponse.json();
+      const metadataAccount = metadataData.result?.[0]?.account?.data?.[0];
 
-      if (data.result?.value?.data) {
-        const parsedData = data.result.value.data;
-        decimals = parsedData?.parsed?.info?.decimals || 0;
+      if (metadataAccount) {
+        const buffer = Uint8Array.from(atob(metadataAccount), (char) => char.charCodeAt(0));
+        let offset = 65;
+
+        const readString = () => {
+          if (offset + 4 > buffer.length) return '';
+          const length =
+            buffer[offset] |
+            (buffer[offset + 1] << 8) |
+            (buffer[offset + 2] << 16) |
+            (buffer[offset + 3] << 24);
+          offset += 4;
+          if (length < 0 || offset + length > buffer.length) return '';
+          const value = new TextDecoder().decode(buffer.slice(offset, offset + length)).replace(/\0+$/g, '').trim();
+          offset += length;
+          return value;
+        };
+
+        name = readString();
+        symbol = readString();
+      }
+    } catch (err) {
+      console.log('Failed to fetch Metaplex metadata, using mint fallback');
+    }
+
+    if (!name || !symbol) {
+      const publicTokenInfo = await fetchSplTokenInfoFromPublicRegistry(mintAddress);
+      if (publicTokenInfo) {
+        name = name || publicTokenInfo.name || '';
+        symbol = symbol || publicTokenInfo.symbol || '';
       }
     }
 
     return {
       mint: mintAddress,
-      symbol,
+      name: name || symbol || mintAddress.slice(0, 8),
+      symbol: symbol || name || mintAddress.slice(0, 8),
       decimals
     };
+  };
+
+  const fetchSplTokenInfoFromPublicRegistry = async (mintAddress: string) => {
+    const endpoints = [
+      'https://token.jup.ag/strict',
+      'https://token.jup.ag/all',
+      'https://raw.githubusercontent.com/solana-labs/token-list/main/src/tokens/solana.tokenlist.json'
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = await response.json();
+        const tokens = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.tokens)
+            ? payload.tokens
+            : [];
+
+        const match = (tokens as PublicSplTokenInfo[]).find((token) =>
+          token.address === mintAddress && (token.chainId === 101 || token.chainId === '101' || token.chainId === undefined)
+        );
+
+        if (match) {
+          return match;
+        }
+      } catch {
+        // Ignore public registry errors and continue to the next source.
+      }
+    }
+
+    return null;
   };
 
   const decodeHexString = (hex: string): string => {
@@ -333,6 +425,20 @@ const ConfigPage = () => {
     });
   };
 
+  const updateSplTokenOverride = (
+    index: number,
+    field: 'name' | 'symbol',
+    value: string
+  ) => {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      splTokens: draft.splTokens?.map((token, tokenIndex) =>
+        tokenIndex === index ? { ...token, [field]: value } : token
+      ) || []
+    });
+  };
+
   const updateDraft = <K extends keyof ChainConfig>(key: K, value: ChainConfig[K]) => {
     if (!draft) {
       return;
@@ -344,8 +450,7 @@ const ConfigPage = () => {
   const loadTags = async () => {
     setLoadingTags(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-      const response = await fetch(`${apiBase}/tags`);
+      const response = await fetch(apiUrl('/tags'));
       if (response.ok) {
         const data = await response.json();
         setTags(data);
@@ -380,8 +485,7 @@ const ConfigPage = () => {
   const loadIndexerStatus = async () => {
     setLoadingIndexer(true);
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
-      const response = await fetch(`${apiBase}/chains`);
+      const response = await fetch(apiUrl('/chains'));
       if (response.ok) {
         const data = await response.json();
         setIndexerChains(data);
@@ -396,9 +500,8 @@ const ConfigPage = () => {
   // Pause/resume chain indexing
   const toggleIndexerPause = async (chainId: string, pause: boolean) => {
     try {
-      const apiBase = import.meta.env.VITE_INDEXER_API ?? 'http://localhost:7070';
       const endpoint = pause ? 'pause' : 'resume';
-      const response = await fetch(`${apiBase}/chain/${chainId}/${endpoint}`, {
+      const response = await fetch(apiUrl(`/chain/${chainId}/${endpoint}`), {
         method: 'POST'
       });
       if (response.ok) {
@@ -462,7 +565,7 @@ const ConfigPage = () => {
                 ) : null}
                 {chain.splTokens && chain.splTokens.length > 0 ? (
                   <div className="chain-meta">
-                    SPL Tokens: {chain.splTokens.map(t => t.symbol || t.mint.slice(0, 8)).join(', ')}
+                    SPL Tokens: {chain.splTokens.map(t => t.symbol || t.name || t.mint.slice(0, 8)).join(', ')}
                   </div>
                 ) : null}
               </div>
@@ -625,19 +728,46 @@ const ConfigPage = () => {
                 <h4>SPL Tokens</h4>
                 <div className="token-list">
                   {draft.splTokens?.map((token, index) => (
-                    <div key={index} className="token-item">
-                      <span>
-                        <strong>{token.symbol || 'Unknown'}</strong>
-                        <span className="token-address">{token.mint}</span>
-                        {token.decimals !== undefined && <span className="token-decimals">({token.decimals} decimals)</span>}
-                      </span>
-                      <button
-                        type="button"
-                        className="danger small"
-                        onClick={() => removeSplToken(index)}
+                    <div
+                      key={index}
+                      className="token-item"
+                      style={{ display: 'block', alignItems: 'stretch' }}
+                    >
+                      <div style={{ marginBottom: '10px' }}>
+                        <strong>{token.symbol || token.name || 'Unknown'}</strong>
+                        <span className="token-address" style={{ marginLeft: '8px' }}>{token.mint}</span>
+                        {token.decimals !== undefined ? (
+                          <span className="token-decimals">({token.decimals} decimals)</span>
+                        ) : null}
+                      </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 180px) auto',
+                          gap: '8px',
+                          alignItems: 'center'
+                        }}
                       >
-                        Remove
-                      </button>
+                        <input
+                          type="text"
+                          value={token.name ?? ''}
+                          placeholder="Manual token name"
+                          onChange={(e) => updateSplTokenOverride(index, 'name', e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          value={token.symbol ?? ''}
+                          placeholder="Manual symbol"
+                          onChange={(e) => updateSplTokenOverride(index, 'symbol', e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="danger small"
+                          onClick={() => removeSplToken(index)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   )) || <p className="muted">No SPL tokens configured.</p>}
                 </div>
